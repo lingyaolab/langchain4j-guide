@@ -32,8 +32,8 @@ python -m http.server 8080
 
 仓库已带 `.github/workflows/deploy-pages.yml`：
 
-1. 推到 `main`
-2. 仓库 Settings → Pages → Source 选择 **GitHub Actions**
+1. 仓库 Settings → Pages → Source 选择 **GitHub Actions**
+2. 在 Actions 里手动运行 **Deploy site**（当前工作流只在手动触发）
 3. 工作流会先重建搜索索引、跑 `check-site`，再上传 `langchain4j-learn/`
 
 如果使用自定义域名，在 `langchain4j-learn/` 下新建 `CNAME`，内容写域名。
