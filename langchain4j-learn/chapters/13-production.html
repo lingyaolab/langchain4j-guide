@@ -42,11 +42,13 @@
 
         <h2 id="timeout">超时：连接、读取与流式</h2>
         <p>
-          <code>OpenAiChatModel.builder().timeout(...)</code> 会同时覆盖连接与读取超时；
-          不设置时连接默认 15 秒、读取默认 60 秒。流式请求可能长时间没有新 token，
-          读取超时要按场景放宽，别用普通问答的 60 秒。
+          <code>OpenAiChatModel.builder().timeout(...)</code> 会同时覆盖同步请求的连接与读取超时；
+          不设置时连接默认 15 秒、读取默认 60 秒。流式请求要用
+          <code>OpenAiStreamingChatModel.builder().timeout(...)</code> 单独配置，并放宽读取超时，
+          别沿用普通问答的 60 秒。
         </p>
         <pre data-lang="java" data-file="超时与重试">ChatModel model = OpenAiChatModel.builder()
+        .baseUrl("https://api.deepseek.com/v1")
         .apiKey(System.getenv("DEEPSEEK_API_KEY"))
         .modelName("deepseek-chat")
         .timeout(Duration.ofSeconds(90))
@@ -79,7 +81,9 @@
 
         <h2 id="fallback">降级：主模型不可用时怎么办</h2>
         <p>
-          LangChain4j 没有内置的「主备模型路由」，需要在 <code>ChatModel</code> 外面包一层。
+          LangChain4j 没有内置的「自动故障切换」；内置的
+          <code>RoutingChatModel</code> / <code>RoutingStreamingChatModel</code> 只负责按规则路由，
+          不会在模型报错时自动切换。需要 failover 时，在外面包一层。
           降级模型要能接受同样的消息与参数，并且保留原请求的 <code>maxOutputTokens</code> 等约束。
         </p>
         <pre data-lang="java" data-file="主备模型">final class FallbackChatModel implements ChatModel {

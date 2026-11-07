@@ -4,13 +4,24 @@
 
 ## v1.1.0 — 2026-11-07
 
-新增 00A「ChatClient 信息流实验室」，并补一组源码复核修正。
+新增 00A「ChatClient 信息流实验室」，并完成一轮全站源码复核。
 
 ### 交互页
 
 - L1 最小调用 9 节点、L2 工程化 14 节点、L3 生产化 22 节点。
 - 可播放、单步、切换场景，每一步回跳对应章节与源码。
 - 主题与站点一致：深海蓝 + 琥珀金；支持 `prefers-reduced-motion`。
+
+### 源码复核修正
+
+- 02/03：`ChatOptions` 改为 `ChatRequestParameters`；模板只有 `{{name}}` 是变量，单花括号不需要转义；消息类型补 `CustomMessage`。
+- 01：RAG 默认检索/增强归 `langchain4j-core`；`langchain4j` 放 AI Services、记忆实现与文档加载/切分；DeepSeek baseUrl 的 `/v1` 改为厂商相关。
+- 04/05：单个无注解参数才作为用户消息；JSON Schema 仅在模型支持 `RESPONSE_FORMAT_JSON_SCHEMA` 时启用；字段描述用 `@Description`；`TokenStream` 不自动解析 POJO。
+- 06：`@Tool` 返回 `ToolExecutionResult` 会被 JSON 序列化，不读取 `isError`；同步/TokenStream 默认顺序执行工具；异常回传原始消息；`IMMEDIATE` 需要 AI Service 返回 `Result`。
+- 08/09：RAG 组件补 `ContentInjector`，`ContentRetriever` 必须由用户提供；`minScore` 是向量库查询条件；切分单位是字符；多查询 + 重排必须配 `querySelector`。
+- 10/11/12：只有设置 `outputKey` 的 Agent 才写 `AgenticScope`；并行不自动汇总；循环两个参数都有默认值；MCP/可观测性下一章链接修正；Judge 用词从「必须」改为「建议」。
+- 13/14/15：流式超时在 `OpenAiStreamingChatModel` 上配置；`RoutingChatModel` 只路由不 failover；AI Service 不能同时配同步与流式模型；工具用户身份从 `chatMemoryId()` 读；beta 版本引用修正。
+- 附录：`TextSegment` 不含向量；`EmbeddingStoreIngestor` 归 core；`langchain4j-mcp` 只是客户端；移除不存在的 `ToolContext` 迁移说法；默认值与方法行号引用修正。
 
 ## v1.0.0 — 2026-11-07
 

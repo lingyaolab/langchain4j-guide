@@ -80,7 +80,7 @@ ingestor.ingest(document);</pre>
           入库是离线任务：文档变更后重建对应片段。不要每次请求都重新解析整份文档。
         </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:21">DocumentSplitters.java:21</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:45">DocumentSplitters.java:45</span>
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStoreIngestor.java:54">EmbeddingStoreIngestor.java:54</span>
         </p>
 
@@ -103,12 +103,13 @@ ingestor.ingest(document);</pre>
         <pre data-lang="java" data-file="OrderTools.java">class OrderTools {
     @Tool("按订单号查询订单状态")
     OrderView queryOrder(@P("订单号") String orderNo, InvocationContext ctx) {
-        String userId = (String) ctx.invocationParameters().get("userId");
+        String userId = String.valueOf(ctx.chatMemoryId());
         return orderService.find(userId, orderNo);
     }
 }</pre>
         <p>
-          用户 id 必须来自服务端会话或 <code>InvocationContext</code>，不能由模型填。
+          用户 id 必须来自服务端会话或 <code>@MemoryId</code>（工具里通过
+          <code>InvocationContext.chatMemoryId()</code> 读取），不能由模型填。
           否则模型可以伪造参数查别人的订单。
         </p>
         <p class="src-line">
@@ -131,7 +132,6 @@ ingestor.ingest(document);</pre>
 
         <h2 id="streaming">流式：TokenStream 到 SSE</h2>
         <pre data-lang="java" data-file="AiService 组装">SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
-        .chatModel(model)
         .streamingChatModel(streamingModel)
         .chatMemoryProvider(id -&gt; MessageWindowChatMemory.withMaxMessages(20))
         .contentRetriever(retriever)
@@ -154,7 +154,7 @@ stream.onPartialResponse(token -&gt; emitter.send(SseEmitter.event().data(token)
           <li>鉴权后把 <code>userId</code> 放进会话或 <code>InvocationParameters</code>。</li>
           <li>按用户/租户限流；流式请求设置最长生命周期。</li>
           <li>模型错误返回统一错误码；不要把内部堆栈返回给前端。</li>
-          <li>SSE 断开时取消订阅，避免继续消耗模型 token。</li>
+          <li>SSE 断开时，用 <code>onPartialResponseWithContext</code> 拿到 <code>StreamingHandle</code> 并调用 <code>cancel()</code>；普通 <code>onPartialResponse</code> 不提供取消句柄。</li>
         </ul>
 
         <h2 id="test">测试：断言、Judge 与回归</h2>

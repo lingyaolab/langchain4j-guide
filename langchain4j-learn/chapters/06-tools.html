@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。" />
+    <meta name="description" content="@Tool 参数描述、InvocationContext、工具结果与异常回传、并行调用与工具循环。" />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
     <meta property="og:title" content="06 Tool Calling：@Tool、上下文与结果 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。" />
+    <meta property="og:description" content="@Tool 参数描述、InvocationContext、工具结果与异常回传、并行调用与工具循环。" />
     <title>06 Tool Calling：@Tool、上下文与结果 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
@@ -25,13 +25,13 @@
     <main>
       <article class="article">
         <h1>06 · Tool Calling：@Tool、上下文与结果</h1>
-        <p class="lede">@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。</p>
+        <p class="lede">@Tool 参数描述、InvocationContext、工具结果与异常回传、并行调用与工具循环。</p>
         <h2 id="goals">读完你能做到</h2>
         <ul class="goals">
           <li>用 <code>@Tool</code> 把 Java 方法暴露给模型</li>
           <li>用 <code>@P</code> 写清参数语义，降低模型瞎填的概率</li>
           <li>用 <code>InvocationContext</code> 读取用户与会话信息</li>
-          <li>用 <code>ToolExecutionResult</code> 控制成功/失败与返回内容</li>
+          <li>理解 <code>ToolExecutionResult</code> 的边界与异常回传</li>
         </ul>
 
         <h2 id="why">先说为什么：工具是模型与 Java 的边界</h2>
@@ -68,7 +68,7 @@ System.out.println(assistant.ask("帮我查一下 SO-20261106-001"));</pre>
           <li><code>@Tool("...")</code> 是给模型看的描述；不写 <code>name</code> 时使用方法名。</li>
           <li><code>@P</code> 写参数含义、格式与示例；模型主要靠它填参。</li>
           <li>返回对象会被序列化成 JSON；返回 <code>void</code> 时发送 "Success"。</li>
-          <li><code>@Tool(returnBehavior = IMMEDIATE)</code> 可以让工具结果直接作为最终回答。</li>
+          <li><code>@Tool(returnBehavior = IMMEDIATE)</code> 需要 AI Service 返回 <code>Result</code>，工具结果从 <code>Result.toolExecutions()</code> 取；同一轮所有工具都必须是 immediate 且无错误。</li>
         </ul>
 
         <h2 id="tool-context">ToolContext：把用户与租户带进工具</h2>
@@ -87,34 +87,38 @@ String myOrder(InvocationContext ctx) {
 
         <h2 id="tool-result">ToolResult：成功、失败与直接返回</h2>
         <p>
-          需要控制结构化结果或错误状态时，返回 <code>ToolExecutionResult</code>：
+          <code>ToolExecutionResult</code> 是框架内部的执行结果包装；<code>@Tool</code> 方法直接返回它时，
+          框架会把它当普通对象序列化成 JSON，<strong>不会</strong>读取其中的 <code>isError</code> /
+          <code>resultText</code>。需要控制错误时，优先抛出异常交给 <code>toolExecutionErrorHandler</code>；
+          需要完全自定义执行，使用 <code>Map&lt;ToolSpecification, ToolExecutor&gt;</code>。
         </p>
-        <pre data-lang="java" data-file="ToolExecutionResult">@Tool("转账")
-ToolExecutionResult transfer(String from, String to, long cents) {
-    try {
-        bank.transfer(from, to, cents);
-        return ToolExecutionResult.builder()
-                .resultText("转账成功")
-                .build();
-    } catch (Exception e) {
-        return ToolExecutionResult.builder()
-                .isError(true)
-                .resultText("转账失败：" + e.getMessage())
-                .build();
-    }
+        <pre data-lang="java" data-file="失败时抛异常">@Tool("转账")
+String transfer(String from, String to, long cents) {
+    bank.transfer(from, to, cents);   // 失败时抛业务异常
+    return "转账成功";
 }</pre>
+        <p>
+          默认同步模式下，工具异常会把异常消息（或异常类名）作为工具结果回给模型；
+          需要改成固定文案或直接失败，配置 <code>AiServices.toolExecutionErrorHandler(...)</code>。
+        </p>
+        <p class="src-line">
+          返回值序列化 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/tool/DefaultToolExecutor.java:291">DefaultToolExecutor.java:291</span>；
+          默认异常回传 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/tool/ToolService.java:104">ToolService.java:104</span>。
+        </p>
 
         <h2 id="parallel">并行工具调用与顺序</h2>
         <p>
-          模型可能在一轮里返回多个工具调用。框架默认可以并行执行；如果工具有顺序依赖，
-          应拆成多个工具或让模型分轮调用。不要假设多个工具一定按数组顺序执行。
+          模型可能在一轮里返回多个工具调用。同步与 <code>TokenStream</code> 模式默认<strong>顺序执行</strong>；
+          只有异步 / 响应式模式默认并发。需要并发时显式调用
+          <code>.executeToolsConcurrently()</code> 或 <code>.executeToolsConcurrently(Executor)</code>。
+          有顺序依赖时不要开并发，拆成多个工具或让模型分轮调用。
         </p>
 
         <h2 id="errors">工具异常怎么回到模型</h2>
         <p>
-          默认策略是：参数错误可能直接失败；执行异常会把
-          <code>Tool execution failed: ...</code> 回给模型，让它有机会换方案。
-          需要自定义时，用 <code>AiServices.toolExecutionErrorHandler(...)</code>。
+          默认策略是：参数错误可能直接失败；执行异常会把<strong>原始异常消息</strong>（消息为空时用异常类名）
+          回给模型，让它有机会换方案。需要固定文案、脱敏或直接失败时，配置
+          <code>AiServices.toolExecutionErrorHandler(...)</code>。
         </p>
 
         <h2 id="cheatsheet">API 速查</h2>
@@ -125,7 +129,7 @@ ToolExecutionResult transfer(String from, String to, long cents) {
               <tr><td>暴露工具</td><td><code>@Tool("描述")</code></td></tr>
               <tr><td>描述参数</td><td><code>@P("含义")</code></td></tr>
               <tr><td>读调用上下文</td><td><code>InvocationContext</code></td></tr>
-              <tr><td>控制结果</td><td><code>ToolExecutionResult</code></td></tr>
+              <tr><td>错误控制 / 自定义执行</td><td><code>toolExecutionErrorHandler</code> / <code>ToolExecutor</code></td></tr>
               <tr><td>直接返回</td><td><code>ReturnBehavior.IMMEDIATE</code></td></tr>
             </tbody>
           </table>

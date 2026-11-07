@@ -31,12 +31,12 @@
           <table>
             <thead><tr><th>模块</th><th>职责</th></tr></thead>
             <tbody>
-              <tr><td><code>langchain4j-core</code></td><td>契约与数据模型：ChatModel、消息、Embedding、Document、RAG 接口</td></tr>
-              <tr><td><code>langchain4j</code></td><td>AI Services、Memory 默认实现、RAG 默认实现、切分器</td></tr>
+              <tr><td><code>langchain4j-core</code></td><td>契约与数据模型：ChatModel、消息、Embedding、Document、RAG 接口与默认检索/增强实现</td></tr>
+              <tr><td><code>langchain4j</code></td><td>AI Services、Memory 实现、文档加载/切分与 RAG 接线</td></tr>
               <tr><td><code>langchain4j-open-ai</code></td><td>OpenAI 兼容的 chat / embedding / image 模型</td></tr>
               <tr><td><code>langchain4j-ollama</code></td><td>本地 Ollama 模型</td></tr>
               <tr><td><code>langchain4j-pgvector</code></td><td>pgvector 向量库</td></tr>
-              <tr><td><code>langchain4j-mcp</code></td><td>MCP 客户端与服务端</td></tr>
+              <tr><td><code>langchain4j-mcp</code></td><td>MCP 客户端；服务端用 <code>langchain4j-community-mcp-server</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -51,8 +51,8 @@
         <h2 id="rag">RAG 相关模块</h2>
         <p>
           <code>langchain4j-core</code> 放 <code>DocumentLoader</code>、<code>DocumentSplitter</code>、
-          <code>EmbeddingStore</code>、<code>ContentRetriever</code>；<code>langchain4j</code> 放
-          <code>FileSystemDocumentLoader</code>、<code>DocumentSplitters</code>、<code>EmbeddingStoreIngestor</code>。
+          <code>EmbeddingStore</code>、<code>ContentRetriever</code> 与 <code>EmbeddingStoreIngestor</code>；
+          <code>langchain4j</code> 放 <code>FileSystemDocumentLoader</code>、<code>DocumentSplitters</code>，并负责接线。
         </p>
 
         <h2 id="extension">provider 与扩展模块</h2>

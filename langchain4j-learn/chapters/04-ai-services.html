@@ -56,7 +56,7 @@ System.out.println(assistant.explain("虚拟线程"));</pre>
 
         <h2 id="interface">接口契约：方法名、参数与返回值</h2>
         <ul>
-          <li>一个方法就是一次调用；参数默认按顺序作为用户消息的一部分。</li>
+          <li>一个方法就是一次调用。单个无注解参数会作为用户消息；多个参数必须用 <code>@UserMessage</code> + <code>@V</code>，否则会报「没有定义用户消息」。</li>
           <li>返回值决定解析方式：<code>String</code>、POJO、<code>List&lt;T&gt;</code>、<code>enum</code> 等。</li>
           <li>方法可以抛运行时异常；模型/网络错误会从代理里抛出。</li>
         </ul>

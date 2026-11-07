@@ -88,8 +88,8 @@ window.AS_SITE = {
           status: "ready",
           mins: 32,
           needKey: true,
-          desc: "ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点",
-          kw: ["ChatModel", "StreamingChatModel", "ChatRequest", "ChatResponse", "ChatOptions", "stream", "多模型"],
+          desc: "ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点",
+          kw: ["ChatModel", "StreamingChatModel", "ChatRequest", "ChatResponse", "ChatRequestParameters", "stream", "多模型"],
           sections: [
             ["goals", "读完你能做到"],
             ["why", "先说为什么：ChatModel 与 StreamingChatModel 是两条接口"],
@@ -97,7 +97,7 @@ window.AS_SITE = {
             ["line-by-line", "逐行解读：消息、参数与返回值"],
             ["sync-vs-stream", "同步与流式：什么时候用哪个"],
             ["request", "ChatRequest：把消息与参数装进一个对象"],
-            ["options", "ChatOptions：温度、topP、maxTokens"],
+            ["options", "ChatRequestParameters：温度、topP、maxOutputTokens"],
             ["providers", "多模型与 OpenAI 兼容端点"],
             ["cheatsheet", "API 速查"],
             ["pitfalls", "陷阱与窍门"],
@@ -116,7 +116,7 @@ window.AS_SITE = {
           sections: [
             ["goals", "读完你能做到"],
             ["why", "先说为什么：提示词是消息列表，不是字符串"],
-            ["messages", "四种消息：System / User / AI / Tool"],
+            ["messages", "五类消息：System / User / AI / Tool / Custom"],
             ["templates", "PromptTemplate：变量、默认值与转义"],
             ["params", "模板变量与运行时参数"],
             ["multimodal", "多模态：文本、图片与文件"],

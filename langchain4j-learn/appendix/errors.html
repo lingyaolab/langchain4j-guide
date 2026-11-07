@@ -65,7 +65,7 @@
           <div class="pf-h">4. 模型不调用工具</div>
           <dl>
             <dt>你会看到</dt><dd>回答很正常，但工具一次都没执行。</dd>
-            <dt>因为</dt><dd>工具描述太模糊、参数没有 <code>@P</code>、或模型不支持 function calling。</dd>
+            <dt>因为</dt><dd>工具描述太模糊、参数描述缺失（不影响注册，但影响填参质量）、或模型不支持 function calling。</dd>
             <dt>改成</dt><dd>把工具描述写成「什么时候用、输入是什么、返回什么」；先用明确指令测试。</dd>
           </dl>
         </div>
@@ -73,7 +73,7 @@
           <div class="pf-h">5. 结构化输出解析失败</div>
           <dl>
             <dt>你会看到</dt><dd><code>OutputParsingException</code> 或 JSON 反序列化错误。</dd>
-            <dt>因为</dt><dd>模型返回了 markdown 围栏、缺字段或枚举值不在范围内。</dd>
+            <dt>因为</dt><dd>缺字段、枚举值不在范围内，或返回了非 JSON 文本（POJO 解析通常能从围栏中提取 JSON）。</dd>
             <dt>改成</dt><dd>在系统提示里要求「只输出 JSON」；给字段加描述；对失败做有限次重试。</dd>
           </dl>
         </div>

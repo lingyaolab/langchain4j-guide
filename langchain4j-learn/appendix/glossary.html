@@ -31,7 +31,7 @@
           <table>
             <thead><tr><th>术语</th><th>一句话</th></tr></thead>
             <tbody>
-              <tr><td><code>ChatModel</code></td><td>同步对话接口，输入消息、输出 <code>ChatResponse</code>。</td></tr>
+              <tr><td><code>ChatModel</code></td><td><code>chat(ChatRequest)</code> 返回 <code>ChatResponse</code>；<code>chat(String)</code> 返回 <code>String</code>；另有实验性 <code>chatAsync(...)</code>。</td></tr>
               <tr><td><code>StreamingChatModel</code></td><td>流式对话接口，通过回调逐块返回。</td></tr>
               <tr><td><code>ChatRequest</code></td><td>把消息与参数装在一起的一次请求。</td></tr>
               <tr><td><code>ChatResponse</code></td><td>模型响应，含 AI 消息、token 用量与元数据。</td></tr>
@@ -47,7 +47,7 @@
             <thead><tr><th>术语</th><th>一句话</th></tr></thead>
             <tbody>
               <tr><td><code>Document</code></td><td>加载后的原文与 metadata。</td></tr>
-              <tr><td><code>TextSegment</code></td><td>切分后的文本块，带 metadata 与向量。</td></tr>
+              <tr><td><code>TextSegment</code></td><td>切分后的文本块，带 text 与 metadata；向量由 <code>Embedding</code> 单独表示。</td></tr>
               <tr><td><code>Embedding</code></td><td>文本的向量表示。</td></tr>
               <tr><td><code>EmbeddingStore</code></td><td>保存向量并支持相似度检索。</td></tr>
               <tr><td><code>ContentRetriever</code></td><td>给一个问题，返回若干相关内容。</td></tr>

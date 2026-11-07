@@ -47,13 +47,14 @@
           不要手动把稳定模块也改成 beta。
         </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-bom/pom.xml:13">pom.xml:13</span>
+          <span class="src" data-src="langchain4j-bom/pom.xml:20">pom.xml:20</span>
+          <span class="src" data-src="langchain4j-bom/pom.xml:21">pom.xml:21</span>
         </p>
 
         <h2 id="api">API 变化</h2>
         <ul>
           <li>0.x 的 <code>ChatLanguageModel</code> 在 1.x 中统一为 <code>ChatModel</code>。</li>
-          <li>工具上下文从早期的 <code>ToolContext</code> 迁到 <code>InvocationContext</code> / 工具执行结果对象。</li>
+          <li>工具上下文统一为 <code>InvocationContext</code>（1.6+）与 <code>ToolExecutionResult</code>。</li>
           <li>结构化输出由 AI Service 返回类型驱动，少写手拼 JSON 的提示词。</li>
           <li>RAG 统一到 <code>ContentRetriever</code> 与 <code>RetrievalAugmentor</code>。</li>
         </ul>

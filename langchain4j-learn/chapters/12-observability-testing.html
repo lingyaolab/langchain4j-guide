@@ -88,6 +88,7 @@ ChatModel model = OpenAiChatModel.builder()
         <p class="src-line">
           <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/listeners/MicrometerMetricsChatModelListener.java:50">MicrometerMetricsChatModelListener.java:50</span>
           <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/conventions/OTelGenAiMetricName.java:12">OTelGenAiMetricName.java:12</span>
+          <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/conventions/OTelGenAiMetricName.java:17">OTelGenAiMetricName.java:17</span>
         </p>
 
         <h2 id="tracing">Observation 与 tracing：把一次调用串起来</h2>
@@ -132,7 +133,7 @@ LangChain4jAssertions.assertThat(model.last)
         <p>
           <code>Judge.from(chatModel)</code> 把每个 criterion 交给 judge 模型判断。
           它适合「回答是否包含某事实」「是否遗漏退款期限」这类自然语言标准。
-          judge 必须用不同模型/固定版本，并尽量设置 temperature 0。
+          judge 建议用不同模型家族、固定版本，并尽量设置 temperature 0。
         </p>
         <pre data-lang="java" data-file="Judge 断言">Judge judge = Judge.from(judgeModel);
 
@@ -193,7 +194,7 @@ judge.assertThat(answer)
         </div>
 
         <h2 id="next">下一步</h2>
-        <p><strong>13 生产化</strong> 仍在规划中；先把监听、指标与回归集接进项目。</p>
+        <p>进入 <a href="13-production.html">13 生产化</a>，把监听、指标与回归集接进生产边界。</p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>

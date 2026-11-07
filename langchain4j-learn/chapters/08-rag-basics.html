@@ -58,25 +58,27 @@
         Path.of("docs/refund.md"),
         new TextDocumentParser());</pre>
         <p class="src-line">
-          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/loader/FileSystemDocumentLoader.java:71">FileSystemDocumentLoader.java:71</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/loader/FileSystemDocumentLoader.java:49">FileSystemDocumentLoader.java:49</span>
         </p>
 
         <h2 id="splitters">DocumentSplitter：按字符、段落与 token</h2>
         <pre data-lang="java" data-file="递归切分">DocumentSplitter splitter = DocumentSplitters.recursive(500, 50);
 List&lt;TextSegment&gt; segments = splitter.split(document);</pre>
         <p>
-          第一个参数是每段最大长度，第二个是重叠长度。切分粒度直接影响召回质量：
-          太小会丢上下文，太大会挤占提示词预算。
+          两个参数是<strong>字符数</strong>：每段最多 500 字符，重叠 50 字符。切分粒度直接影响召回质量：
+          太小会丢上下文，太大会挤占提示词预算。按 token 切分要用三参数重载并传
+          <code>TokenCountEstimator</code>。
         </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:21">DocumentSplitters.java:21</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:45">DocumentSplitters.java:45</span>
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/document/DocumentSplitter.java:18">DocumentSplitter.java:18</span>
         </p>
 
         <h2 id="embedding">EmbeddingModel：维度与批处理</h2>
         <p>
-          <code>EmbeddingModel.embed(...)</code> 返回向量；<code>dimension()</code> 给出维度。
-          写入向量库前必须确认维度一致，否则建表或插入会失败。
+          <code>EmbeddingModel.embed(String/TextSegment)</code> 返回 <code>Response&lt;Embedding&gt;</code>
+          （用 <code>.content()</code> 取向量）；<code>embed(EmbeddingRequest)</code> 返回
+          <code>EmbeddingResponse</code>。写入向量库前必须确认 <code>dimension()</code> 一致，否则建表或插入会失败。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/embedding/EmbeddingModel.java:39">EmbeddingModel.java:39</span>
@@ -123,7 +125,8 @@ Assistant assistant = AiServices.builder(Assistant.class)
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/ContentRetriever.java:36">ContentRetriever.java:36</span>
-          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:70">EmbeddingStoreContentRetriever.java:70</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:72">EmbeddingStoreContentRetriever.java:72</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:73">EmbeddingStoreContentRetriever.java:73</span>
         </p>
 
         <h2 id="cheatsheet">API 速查</h2>

@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。" />
+    <meta name="description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。" />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
     <meta property="og:title" content="02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。" />
+    <meta property="og:description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。" />
     <title>02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
@@ -25,7 +25,7 @@
     <main>
       <article class="article">
         <h1>02 · ChatModel：同步、流式与请求对象</h1>
-        <p class="lede">ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。</p>
+        <p class="lede">ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。</p>
         <h2 id="goals">读完你能做到</h2>
         <ul class="goals">
           <li>区分 <code>ChatModel</code> 与 <code>StreamingChatModel</code></li>
@@ -103,7 +103,7 @@ ChatResponse a = model.chat(ChatRequest.builder()
         .parameters(params)
         .build());</pre>
 
-        <h2 id="options">ChatOptions：温度、topP、maxTokens</h2>
+        <h2 id="options">ChatRequestParameters：温度、topP、maxOutputTokens</h2>
         <div class="table-wrap">
           <table>
             <thead><tr><th>参数</th><th>作用</th><th>常见取值</th></tr></thead>

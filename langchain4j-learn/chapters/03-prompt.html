@@ -40,7 +40,7 @@
           <code>UserMessage.from(text)</code> 的快捷方式；一旦要做多轮、工具或图片，就必须回到消息层。
         </p>
 
-        <h2 id="messages">四种消息：System / User / AI / Tool</h2>
+        <h2 id="messages">五类消息：System / User / AI / Tool / Custom</h2>
         <div class="table-wrap">
           <table>
             <thead><tr><th>类型</th><th>谁产生</th><th>用途</th></tr></thead>
@@ -48,7 +48,8 @@
               <tr><td><code>SystemMessage</code></td><td>应用</td><td>角色、边界、输出格式</td></tr>
               <tr><td><code>UserMessage</code></td><td>用户 / 应用</td><td>本轮问题，可带文本与图片</td></tr>
               <tr><td><code>AiMessage</code></td><td>模型</td><td>回答或工具调用请求</td></tr>
-              <tr><td><code>ToolExecutionResultMessage</code></td><td>框架</td><td>工具执行结果，回填给模型</td></tr>
+              <tr><td><code>ToolExecutionResultMessage</code></td><td>应用 / AI Service（低层 <code>ChatModel</code> 需自行创建）</td><td>工具执行结果，回填给模型</td></tr>
+              <tr><td><code>CustomMessage</code></td><td>应用</td><td>带任意属性的自定义消息</td></tr>
             </tbody>
           </table>
         </div>
@@ -114,7 +115,7 @@ ChatResponse response = model.chat(message);</pre>
         <h2 id="pitfalls">陷阱与窍门</h2>
         <div class="callout warn">
           <span class="ct">把 JSON 示例直接写进系统提示词</span>
-          <p>花括号可能被模板引擎当成变量；用 <code>{</code> / <code>}</code> 转义，或改用代码块。</p>
+          <p>只有 <code>{{name}}</code> 会触发替换；单个 <code>{</code> / <code>}</code> 是字面量，JSON 示例不需要转义。要输出字面 <code>{{...}}</code>，请把它作为变量值传入，或换一个支持转义的模板工厂。</p>
         </div>
         <div class="callout warn">
           <span class="ct">以为 <code>SystemMessage</code> 一定生效</span>

@@ -36,9 +36,14 @@
 
         <h2 id="why">先说为什么：结构化输出不是 prompt 技巧</h2>
         <p>
-          在 LangChain4j 里，返回类型就是契约：<code>AiServices</code> 会为 POJO / record 生成
-          JSON Schema，要求模型按 schema 输出，再把 JSON 解析成对象。你不需要手写
-          「请返回 JSON」这段提示词。
+          在 LangChain4j 里，返回类型就是契约：当模型支持
+          <code>RESPONSE_FORMAT_JSON_SCHEMA</code> 时，<code>AiServices</code> 会为 POJO / record 生成
+          JSON Schema；不支持时则退化为「在提示词里追加格式说明」，再由框架解析。
+          两种情况都不需要你手写完整的 JSON 示例。
+        </p>
+        <p class="src-line">
+          是否走 JSON Schema <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/DefaultAiServices.java:389">DefaultAiServices.java:389</span>；
+          能力探测 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/DefaultAiServices.java:1485">DefaultAiServices.java:1485</span>。
         </p>
 
         <h2 id="json-schema">JSON Schema：让模型知道字段</h2>
@@ -67,7 +72,7 @@ System.out.println(movie.title() + " / " + movie.year());</pre>
         <ul>
           <li>枚举字段会生成 <code>enum</code> 约束；模型给出不在枚举里的值会解析失败。</li>
           <li><code>List&lt;T&gt;</code> / <code>Set&lt;T&gt;</code> 会生成数组 schema。</li>
-          <li>嵌套 record 会递归生成对象 schema；避免循环引用。</li>
+          <li>嵌套 record 会递归生成对象 schema；重复类型会生成 <code>$ref</code> / definitions，支持递归结构。</li>
         </ul>
 
         <h2 id="validation">校验与失败重试</h2>
@@ -82,8 +87,10 @@ System.out.println(movie.title() + " / " + movie.year());</pre>
 
         <h2 id="streaming">流式结构化输出</h2>
         <p>
-          流式场景下，部分 token 不是完整 JSON，不能边收边解析成对象。要么先聚合完整响应再解析，
-          要么让接口返回 <code>TokenStream</code>，在 <code>onCompleteResponse</code> 里处理最终对象。
+          流式场景下，部分 token 不是完整 JSON，不能边收边解析成对象。可以让接口返回
+          <code>TokenStream</code>，在 <code>onCompleteResponse</code> 里拿 <code>ChatResponse</code>，
+          再自己解析 <code>aiMessage().text()</code>。注意：<code>TokenStream</code> 不会自动把结果解析成 POJO；
+          需要自动结构化输出时，用非流式返回类型。
         </p>
 
         <h2 id="cheatsheet">API 速查</h2>
@@ -102,7 +109,7 @@ System.out.println(movie.title() + " / " + movie.year());</pre>
         <h2 id="pitfalls">陷阱与窍门</h2>
         <div class="callout warn">
           <span class="ct">字段名和业务含义不一致</span>
-          <p>模型按字段名与描述生成内容；用 <code>@JsonPropertyDescription</code> 补语义，别用 <code>f1</code>、<code>f2</code>。</p>
+          <p>模型按字段名与描述生成内容；用 <code>@Description</code>（<code>dev.langchain4j.model.output.structured.Description</code>）补语义，别用 <code>f1</code>、<code>f2</code>。<span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/output/structured/Description.java:15">Description.java:15</span></p>
         </div>
         <div class="callout warn">
           <span class="ct">把校验失败当异常吞掉</span>

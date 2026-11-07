@@ -36,8 +36,8 @@
 
         <h2 id="why">先说为什么：LangChain4j 不是一个 jar</h2>
         <p>
-          它按能力拆成很多模块：<code>langchain4j-core</code> 放契约与数据模型，
-          <code>langchain4j</code> 放 AI Services、记忆与 RAG 的默认实现，
+          它按能力拆成很多模块：<code>langchain4j-core</code> 放契约、数据模型与 RAG 的默认检索/增强实现，
+          <code>langchain4j</code> 放 AI Services、对话记忆实现与文档加载/切分，
           <code>langchain4j-open-ai</code> 只是其中一个 provider。模块的版本由 BOM 统一管理。
         </p>
         <pre data-lang="xml" data-file="pom.xml">&lt;properties&gt;
@@ -131,7 +131,8 @@ public class Main {
             <thead><tr><th>要什么</th><th>加什么</th></tr></thead>
             <tbody>
               <tr><td>只写契约与数据模型</td><td><code>langchain4j-core</code></td></tr>
-              <tr><td>AI Services、记忆、RAG 默认实现</td><td><code>langchain4j</code></td></tr>
+              <tr><td>RAG 契约与默认检索/增强</td><td><code>langchain4j-core</code></td></tr>
+              <tr><td>AI Services、记忆实现、文档加载/切分</td><td><code>langchain4j</code></td></tr>
               <tr><td>OpenAI 兼容模型</td><td><code>langchain4j-open-ai</code></td></tr>
               <tr><td>本地 embedding</td><td><code>langchain4j-embeddings-all-minilm-l6-v2</code></td></tr>
             </tbody>
@@ -140,8 +141,8 @@ public class Main {
 
         <h2 id="pitfalls">陷阱与窍门</h2>
         <div class="callout warn">
-          <span class="ct">把 baseUrl 写成 <code>https://api.deepseek.com</code></span>
-          <p><strong>因为</strong>客户端会在后面拼 <code>/chat/completions</code>，少了 <code>/v1</code> 可能 404。<strong>改成</strong>按厂商文档补全路径。</p>
+          <span class="ct">baseUrl 的 <code>/v1</code> 取决于厂商</span>
+          <p><strong>因为</strong>客户端会在 baseUrl 后拼 <code>/chat/completions</code>；OpenAI 兼容端点通常带 <code>/v1</code>，DeepSeek 的 <code>https://api.deepseek.com</code> 与 <code>.../v1</code> 都可用。<strong>改成</strong>按厂商文档确认，别把某一家规则套到所有 provider。</p>
         </div>
         <div class="callout warn">
           <span class="ct">把所有模块都写 <code>1.23.0-beta33</code></span>

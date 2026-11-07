@@ -42,6 +42,9 @@
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:146">AgenticServices.java:146</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:177">AgenticServices.java:177</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:194">AgenticServices.java:194</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/scope/AgenticScope.java:20">AgenticScope.java:20</span>
         </p>
 
         <h2 id="declarative">声明式 Agent：@Agent 与 agentBuilder</h2>
@@ -65,7 +68,8 @@ Writer writer = AgenticServices.agentBuilder(Writer.class)
 
         <h2 id="scope">AgenticScope：用 outputKey 在 Agent 之间传值</h2>
         <p>
-          每个 Agent 的返回值会按 <code>outputKey</code> 写进 <code>AgenticScope</code>；
+          只有设置了 <code>outputKey</code> / <code>typedOutputKey</code> 的 Agent 才会把结果写进
+          <code>AgenticScope</code>；没设置时结果只出现在调用记录里，不会自动按键保存。
           下游 Agent 用 <code>@V("story")</code> 读取同名变量。需要手工读写时，用
           <code>readState</code> / <code>writeState</code>。
         </p>
@@ -108,12 +112,16 @@ String story = flow.run("虚拟线程", "小学生");</pre>
           并行适合互不依赖的检查：事实核查、风格检查、合规检查可以同时跑。每个子 Agent
           必须写不同的 <code>outputKey</code>，最后由一个汇总 Agent 读取这些键。
         </p>
-        <pre data-lang="java" data-file="并行检查">ReviewWorkflow review = AgenticServices.parallelBuilder(ReviewWorkflow.class)
+        <pre data-lang="java" data-file="并行检查">UntypedAgent checks = AgenticServices.parallelBuilder()
         .subAgents(factChecker, styleChecker)
-        .outputKey("review")
-        .build();</pre>
+        .build();
+
+var result = checks.invokeWithAgenticScope(Map.of("draft", draft));
+String facts = (String) result.agenticScope().readState("facts");
+String style = (String) result.agenticScope().readState("style");</pre>
         <p>
-          并行不会自动合并结果；合并是下一个 Agent 或聚合器的职责。
+          并行默认不会合并结果，也不会自动写一个汇总键；每个子 Agent 各写自己的
+          <code>outputKey</code>，需要汇总时再串一个 Agent。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:204">AgenticServices.java:204</span>
@@ -121,8 +129,8 @@ String story = flow.run("虚拟线程", "小学生");</pre>
 
         <h2 id="loop">循环与退出条件：loopBuilder</h2>
         <p>
-          循环适合「生成 → 评审 → 再生成」的迭代。必须同时设置 <code>maxIterations</code>
-          与 <code>exitCondition</code>，否则模型可能一直不满足条件。
+          循环适合「生成 → 评审 → 再生成」的迭代。建议同时设置 <code>maxIterations</code>
+          与 <code>exitCondition</code>：<code>maxIterations</code> 默认是整数上限，只设退出条件才可能无限循环。
         </p>
         <pre data-lang="java" data-file="迭代改写">StoryWorkflow flow = AgenticServices.loopBuilder(StoryWorkflow.class)
         .subAgents(writer, editor)
@@ -133,6 +141,7 @@ String story = flow.run("虚拟线程", "小学生");</pre>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:240">AgenticServices.java:240</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/workflow/LoopAgentService.java:10">LoopAgentService.java:10</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/workflow/impl/LoopAgentServiceImpl.java:24">LoopAgentServiceImpl.java:24</span>
         </p>
 
         <h2 id="conditional">条件分支：conditionalBuilder</h2>
@@ -186,7 +195,7 @@ String story = flow.run("虚拟线程", "小学生");</pre>
         </div>
 
         <h2 id="next">下一步</h2>
-        <p><strong>11 MCP</strong> 仍在规划中；先把 10 章的工作流跑通。</p>
+        <p>进入 <a href="11-mcp.html">11 MCP</a>，把外部工具接进 Agent 的工具面。</p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
