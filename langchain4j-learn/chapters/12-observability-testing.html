@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="ChatModelListener、Micrometer 指标、Observation tracing、请求断言、Judge 与回归集。" />
+    <meta
+      name="description"
+      content="从排障与质量两个问题出发，给 AI 应用加 ChatModelListener、Micrometer 指标、Observation trace、请求断言、Judge 与回归集。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="12 可观测性、测试与评测 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="ChatModelListener、Micrometer 指标、Observation tracing、请求断言、Judge 与回归集。" />
-    <title>12 可观测性、测试与评测 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="12 可观测性、测试与评测：知道它为什么慢、为什么变差 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="监听器、指标、trace、请求断言、Judge 与回归集。" />
+    <title>12 可观测性、测试与评测：知道它为什么慢、为什么变差 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,32 +27,41 @@
   <body data-page="12-observability-testing" data-root="..">
     <main>
       <article class="article">
-        <h1>12 · 可观测性、测试与评测</h1>
-        <p class="lede">ChatModelListener、Micrometer 指标、Observation tracing、请求断言、Judge 与回归集。</p>
-        <h2 id="goals">读完你能做到</h2>
+        <h1>12 · 可观测性、测试与评测：知道它为什么慢、为什么变差</h1>
+        <p class="lede">
+          AI 应用出问题时，最难回答的三个问题是：这次到底发了什么？为什么这么慢/贵？改了 prompt 之后质量有没有下降？
+          这一章按这三问，逐层加监听器、指标、trace、请求断言、Judge 与回归集。
+        </p>
+
+        <h2 id="goals">学完这一章，你能做什么</h2>
         <ul class="goals">
           <li>用 <code>ChatModelListener</code> 记录每次模型调用</li>
           <li>接 Micrometer 看延迟与 token 用量</li>
-          <li>用 <code>langchain4j-test</code> 断言请求与回答</li>
-          <li>用 Judge 做回归评测，而不是只看「像不像」</li>
+          <li>用 Observation 把一次调用串成 trace</li>
+          <li>给提示词和工具面写稳定的请求断言</li>
+          <li>用 Judge 与回归集判断质量变化</li>
         </ul>
 
-        <h2 id="why">先说为什么：日志、指标、测试是三件事</h2>
+        <h2 id="why">先理解：出问题时你最想知道什么</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层</th><th>回答什么问题</th><th>工具</th></tr></thead>
+            <thead><tr><th>问题</th><th>需要的工具</th><th>本章对应</th></tr></thead>
             <tbody>
-              <tr><td>日志 / 监听器</td><td>这一次请求发了什么、回了什么</td><td><code>ChatModelListener</code></td></tr>
-              <tr><td>指标 / tracing</td><td>整体延迟、错误率、token 成本</td><td>Micrometer、Observation</td></tr>
-              <tr><td>测试 / 评测</td><td>改动后质量有没有下降</td><td><code>langchain4j-test</code>、Judge、回归集</td></tr>
+              <tr><td>这次请求发了什么、回了什么？</td><td>监听器 / 日志</td><td>第一步</td></tr>
+              <tr><td>为什么慢、为什么贵？</td><td>指标 / trace</td><td>第二、三步</td></tr>
+              <tr><td>提示词和工具面有没有被改坏？</td><td>请求断言</td><td>第四步</td></tr>
+              <tr><td>回答质量有没有下降？</td><td>Judge + 回归集</td><td>第五、六步</td></tr>
             </tbody>
           </table>
         </div>
-
-        <h2 id="listeners">ChatModelListener：请求、响应与错误</h2>
         <p>
-          监听器有三个回调：<code>onRequest</code>、<code>onResponse</code>、<code>onError</code>。
-          它拿得到请求、响应与异常，但拿不到你的业务上下文，除非你把上下文放进属性。
+          不要一上来全量记录 prompt。先想清楚要回答哪个问题，再选最小工具。
+        </p>
+
+        <h2 id="listeners">第一步：记录每次模型调用</h2>
+        <p>
+          <code>ChatModelListener</code> 有请求、响应、错误三个回调。它拿得到请求、响应与异常，
+          但拿不到业务上下文，除非你把上下文放进属性。
         </p>
         <pre data-lang="java" data-file="监听器">ChatModelListener listener = new ChatModelListener() {
     @Override
@@ -63,51 +75,85 @@
     public void onResponse(ChatModelResponseContext ctx) {
         log.info("usage={}", ctx.chatResponse().tokenUsage());
     }
+
+    @Override
+    public void onError(ChatModelErrorContext ctx) {
+        log.warn("model call failed", ctx.error());
+    }
 };
 
 ChatModel model = OpenAiChatModel.builder()
-        .apiKey(key).modelName("deepseek-chat")
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
         .listeners(listener)
         .build();</pre>
+        <p>
+          上线时不要无条件打印完整 prompt / completion：里面有用户隐私、密钥、内部数据。
+          至少做采样或脱敏。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/listener/ChatModelListener.java:20">ChatModelListener.java:20</span>
           <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:606">OpenAiChatModel.java:606</span>
         </p>
 
-        <h2 id="metrics">Micrometer：延迟与 token 用量</h2>
+        <h2 id="metrics">第二步：看延迟与 token 成本</h2>
         <p>
           <code>MicrometerMetricsChatModelListener</code> 把调用时长与 token 用量写进
           <code>MeterRegistry</code>，指标名遵循 OpenTelemetry GenAI 约定：
-          <code>gen_ai.client.operation.duration</code> 与 <code>gen_ai.client.token.usage</code>。
         </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>指标</th><th>回答什么</th></tr></thead>
+            <tbody>
+              <tr><td><code>gen_ai.client.operation.duration</code></td><td>模型调用耗时分布</td></tr>
+              <tr><td><code>gen_ai.client.token.usage</code></td><td>输入/输出 token 用量</td></tr>
+            </tbody>
+          </table>
+        </div>
         <pre data-lang="java" data-file="Micrometer">MeterRegistry registry = new SimpleMeterRegistry();
 ChatModel model = OpenAiChatModel.builder()
-        .apiKey(key).modelName("deepseek-chat")
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
         .listeners(new MicrometerMetricsChatModelListener(registry))
         .build();</pre>
+        <p>
+          生产环境通常会把这些指标接到 Prometheus / Grafana，按模型、租户、接口维度看 P95 与成本。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/listeners/MicrometerMetricsChatModelListener.java:50">MicrometerMetricsChatModelListener.java:50</span>
           <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/conventions/OTelGenAiMetricName.java:12">OTelGenAiMetricName.java:12</span>
           <span class="src" data-src="langchain4j-micrometer-metrics/src/main/java/dev/langchain4j/micrometer/metrics/conventions/OTelGenAiMetricName.java:17">OTelGenAiMetricName.java:17</span>
         </p>
 
-        <h2 id="tracing">Observation 与 tracing：把一次调用串起来</h2>
+        <h2 id="tracing">第三步：把一次调用串成 trace</h2>
         <p>
+          指标告诉你「慢了」，trace 告诉你「慢在哪一段」。
           <code>ObservationChatModelListener</code> 用 Micrometer Observation 创建 span，
-          需要 <code>ObservationRegistry</code> 与 <code>MeterRegistry</code>。
-          它适合和已有的 tracing 后端（Zipkin / OTLP / Jaeger）对接。
+          需要 <code>ObservationRegistry</code> 与 <code>MeterRegistry</code>：
         </p>
         <pre data-lang="java" data-file="Observation">ChatModelListener listener = new ObservationChatModelListener(
-        observationRegistry, meterRegistry);</pre>
+        observationRegistry, meterRegistry);
+
+ChatModel model = OpenAiChatModel.builder()
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
+        .listeners(listener)
+        .build();</pre>
+        <p>
+          把检索、工具、模型调用都放在同一个 trace 里，才能看出是检索慢、工具慢，还是模型慢。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-observation/src/main/java/dev/langchain4j/observation/listener/ObservationChatModelListener.java:38">ObservationChatModelListener.java:38</span>
           <span class="src" data-src="langchain4j-observation/src/main/java/dev/langchain4j/observation/listener/ObservationChatModelListener.java:48">ObservationChatModelListener.java:48</span>
         </p>
 
-        <h2 id="asserts">请求断言：测试提示词与工具面</h2>
+        <h2 id="asserts">第四步：给提示词和工具面写断言</h2>
         <p>
-          <code>LangChain4jAssertions.assertThat(ChatRequest)</code> 可以断言系统提示、用户消息与工具列表。
-          先用一个捕获请求的假模型，再对请求做断言，比断言最终文本稳定得多。
+          不要只断言最终字符串，模型输出会波动。更稳的是断言「请求长什么样」：
+          系统提示有没有带上、用户模板有没有渲染、工具有没有注册。
         </p>
         <pre data-lang="java" data-file="请求断言">class CapturingModel implements ChatModel {
     ChatRequest last;
@@ -118,28 +164,33 @@ ChatModel model = OpenAiChatModel.builder()
 }
 
 CapturingModel model = new CapturingModel();
-Assistant assistant = AiServices.create(Assistant.class, model);
+SupportAssistant assistant = AiServices.create(SupportAssistant.class, model);
 assistant.chat("你好");
 
 LangChain4jAssertions.assertThat(model.last)
         .hasSystemMessageContaining("简洁")
         .hasUserMessageContaining("你好");</pre>
+        <p>
+          这样即使模型换成别的 provider，只要请求结构没变，测试就仍然有效。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-test/src/main/java/dev/langchain4j/test/LangChain4jAssertions.java:34">LangChain4jAssertions.java:34</span>
           <span class="src" data-src="langchain4j-test/src/main/java/dev/langchain4j/test/model/ChatRequestAssert.java:60">ChatRequestAssert.java:60</span>
         </p>
 
-        <h2 id="judge">Judge：用模型判定回答质量</h2>
+        <h2 id="judge">第五步：用 Judge 判断回答质量</h2>
         <p>
-          <code>Judge.from(chatModel)</code> 把每个 criterion 交给 judge 模型判断。
-          它适合「回答是否包含某事实」「是否遗漏退款期限」这类自然语言标准。
-          judge 建议用不同模型家族、固定版本，并尽量设置 temperature 0。
+          「回答是否包含退款期限」这种标准，很难用字符串断言。用 Judge 把自然语言标准交给一个评审模型：
         </p>
         <pre data-lang="java" data-file="Judge 断言">Judge judge = Judge.from(judgeModel);
 
 judge.assertThat(answer)
         .given("退款需要几天？")
         .satisfies("回答提到 7 个工作日", "没有编造额外日期");</pre>
+        <p>
+          judge 建议用不同模型家族、固定版本，并尽量设置 temperature 0。
+          自评会偏乐观；judge 也会犯错，保留人工抽检。
+        </p>
         <p>
           RAG 场景可以用 <code>basedOnContents(result.sources())</code> 把召回内容交给 judge，
           检查回答是否只基于这些来源。
@@ -150,18 +201,20 @@ judge.assertThat(answer)
           <span class="src" data-src="langchain4j-test/src/main/java/dev/langchain4j/test/judge/JudgedTextAssert.java:142">JudgedTextAssert.java:142</span>
         </p>
 
-        <h2 id="regression">回归集：把评测放进 CI</h2>
+        <h2 id="regression">第六步：把评测放进 CI</h2>
         <p>
           准备一份 JSONL：问题、期望要点、可选来源。每次改动跑一遍，记录通过率与 token 成本。
-          检索侧看 recall@k / MRR，生成侧用 Judge 的通过率；两者不要混成一个分数。
+          检索侧看 recall@k / MRR，生成侧看 Judge 通过率；两者不要混成一个分数。
         </p>
+        <pre data-lang="json" data-file="cases.jsonl">{"question":"退款需要几天？","mustMention":["7 个工作日"],"sources":["refund.md"]}
+{"question":"可以退运费吗？","mustMention":["满 99 包邮"],"sources":["shipping.md"]}</pre>
         <ul>
           <li>固定 judge 模型与版本，避免「judge 升级」导致基线漂移。</li>
           <li>给失败样本保留请求、响应与召回内容，方便回放。</li>
           <li>CI 里只跑小回归集；大集放夜间任务，控制成本。</li>
         </ul>
 
-        <h2 id="production">生产化：采样、脱敏与成本</h2>
+        <h2 id="production">第七步：采样、脱敏与成本</h2>
         <ul>
           <li>默认不要全量记录 prompt / completion；按采样率或错误触发。</li>
           <li>日志脱敏：手机号、身份证、密钥不能进日志与 trace。</li>
@@ -169,32 +222,61 @@ judge.assertThat(answer)
           <li>judge 调用本身也花钱，评测预算要和线上预算分开。</li>
         </ul>
 
-        <h2 id="cheatsheet">API 速查</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>要做什么</th><th>API</th></tr></thead>
-            <tbody>
-              <tr><td>记录调用</td><td><code>ChatModelListener</code></td></tr>
-              <tr><td>指标</td><td><code>MicrometerMetricsChatModelListener</code></td></tr>
-              <tr><td>tracing</td><td><code>ObservationChatModelListener</code></td></tr>
-              <tr><td>请求断言</td><td><code>LangChain4jAssertions.assertThat(ChatRequest)</code></td></tr>
-              <tr><td>回答评测</td><td><code>Judge.from(chatModel)</code></td></tr>
-            </tbody>
-          </table>
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 监听器没触发</div>
+          <dl>
+            <dt>你会看到</dt><dd>日志里没有请求记录。</dd>
+            <dt>因为</dt><dd>只创建了 listener，没有通过 <code>.listeners(...)</code> 挂到模型上。</dd>
+            <dt>改成</dt><dd>确认模型 builder 上挂了 listener；流式模型也要单独挂。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">2. tokenUsage 为 null</div>
+          <dl>
+            <dt>你会看到</dt><dd>指标或日志里用量为空。</dd>
+            <dt>因为</dt><dd>不是所有 provider / 模型都返回用量。</dd>
+            <dt>改成</dt><dd>判空后再记录；没有用量时用估算值并标注来源。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. Judge 结果不稳定</div>
+          <dl>
+            <dt>你会看到</dt><dd>同一批样本每次通过率差很多。</dd>
+            <dt>因为</dt><dd>judge 模型随机性、criterion 太模糊、模型版本漂移。</dd>
+            <dt>改成</dt><dd>temperature 0、固定版本、一条 criterion 只判断一件事。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 观测本身拖慢应用</div>
+          <dl>
+            <dt>你会看到</dt><dd>加了监听后延迟上升。</dd>
+            <dt>因为</dt><dd>同步写日志、全量序列化大对象。</dd>
+            <dt>改成</dt><dd>异步日志、采样、只记录摘要字段。</dd>
+          </dl>
         </div>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">只断言最终字符串</span>
-          <p>模型输出会波动；优先断言请求结构、工具调用与关键事实。</p>
-        </div>
-        <div class="callout warn">
-          <span class="ct">judge 用被测模型自己</span>
-          <p>自评会偏乐观；尽量用不同家族、固定版本的模型，并保留人工抽检。</p>
+        <h2 id="pitfalls">动手练习：给客服助手加观测与回归</h2>
+        <ol>
+          <li>给模型挂一个 listener，记录模型名、消息数与 token 用量。</li>
+          <li>接 Micrometer，观察一次调用的 duration 与 token 指标。</li>
+          <li>用捕获请求的假模型，断言系统提示包含「电商客服」。</li>
+          <li>准备 10 条回归样本，用 Judge 判断回答是否提到关键事实。</li>
+          <li>进阶：给 10 条样本记录基线通过率，改一次 prompt 后对比。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能区分「请求断言、指标、trace、Judge」各自回答什么问题，
+            并说清为什么不能只断言最终字符串，这一章就过关了。
+          </p>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="13-production.html">13 生产化</a>，把监听、指标与回归集接进生产边界。</p>
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在能看见系统在做什么、慢在哪、质量有没有下降。下一章
+          <a href="13-production.html">13 生产化</a> 会把这些能力接到超时、重试、限流与成本边界上。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
