@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="查询转换、多路路由、动态 topK、RRF 聚合与 ScoringModel 重排，以及怎么判断有没有变好。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="09 RAG 进阶：查询改写、重排与多路召回 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="查询转换、多路路由、动态 topK、RRF 聚合与 ScoringModel 重排，以及怎么判断有没有变好。" />
+    <title>09 RAG 进阶：查询改写、重排与多路召回 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="09-rag-advanced" data-root="..">
+    <main>
+      <article class="article">
+        <h1>09 · RAG 进阶：查询改写、重排与多路召回</h1>
+        <p class="lede">查询转换、多路路由、动态 topK、RRF 聚合与 ScoringModel 重排，以及怎么判断有没有变好。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>用 <code>CompressingQueryTransformer</code> 把多轮追问压成独立问题</li>
+          <li>用 <code>ExpandingQueryTransformer</code> 生成多个查询</li>
+          <li>把多个 <code>ContentRetriever</code> 路由到同一条 RAG 链路</li>
+          <li>用 RRF 或 <code>ScoringModel</code> 做聚合与重排</li>
+        </ul>
+
+        <h2 id="why">先说为什么：RAG 进阶是在四个阶段上加策略</h2>
+        <p>
+          <code>DefaultRetrievalAugmentor</code> 把增强拆成四段：查询转换、路由、检索、聚合。
+          基础版每段都只有一个默认实现；进阶版是在不改业务接口的前提下替换其中一段。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>接口</th><th>默认实现</th></tr></thead>
+            <tbody>
+              <tr><td>查询转换</td><td><code>QueryTransformer</code></td><td><code>DefaultQueryTransformer</code></td></tr>
+              <tr><td>路由</td><td><code>QueryRouter</code></td><td><code>DefaultQueryRouter</code></td></tr>
+              <tr><td>检索</td><td><code>ContentRetriever</code></td><td><code>EmbeddingStoreContentRetriever</code></td></tr>
+              <tr><td>聚合</td><td><code>ContentAggregator</code></td><td><code>DefaultContentAggregator</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/DefaultRetrievalAugmentor.java:123">DefaultRetrievalAugmentor.java:123</span>
+        </p>
+
+        <h2 id="transform">查询改写：Compressing 与 Expanding</h2>
+        <p>
+          多轮对话里，「那退款呢？」本身信息不足。<code>CompressingQueryTransformer</code>
+          会结合历史把追问改写成完整问题；<code>ExpandingQueryTransformer</code>
+          则生成多个变体，提升召回覆盖面。
+        </p>
+        <pre data-lang="java" data-file="查询转换">QueryTransformer compress = new CompressingQueryTransformer(model);
+QueryTransformer expand = new ExpandingQueryTransformer(model, 3);</pre>
+        <p>
+          <code>ExpandingQueryTransformer</code> 默认生成 3 个查询；变体越多，检索次数与延迟越高。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/query/transformer/CompressingQueryTransformer.java:41">CompressingQueryTransformer.java:41</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/query/transformer/ExpandingQueryTransformer.java:38">ExpandingQueryTransformer.java:38</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/query/transformer/ExpandingQueryTransformer.java:50">ExpandingQueryTransformer.java:50</span>
+        </p>
+
+        <h2 id="route">路由：一个还是多个 Retriever</h2>
+        <p>
+          <code>DefaultQueryRouter</code> 把每个查询发给所有 retriever；
+          <code>LanguageModelQueryRouter</code> 则让模型根据 retriever 描述选择更合适的一个。
+          前者稳、后者省，但多一次模型调用。
+        </p>
+        <pre data-lang="java" data-file="多路检索">ContentRetriever docs = EmbeddingStoreContentRetriever.builder()
+        .embeddingStore(docsStore).embeddingModel(embeddingModel).maxResults(4).build();
+ContentRetriever tickets = EmbeddingStoreContentRetriever.builder()
+        .embeddingStore(ticketStore).embeddingModel(embeddingModel).maxResults(4).build();
+
+QueryRouter router = new DefaultQueryRouter(docs, tickets);</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/query/router/DefaultQueryRouter.java:28">DefaultQueryRouter.java:28</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/query/router/LanguageModelQueryRouter.java:48">LanguageModelQueryRouter.java:48</span>
+        </p>
+
+        <h2 id="retrieve">检索参数：动态 topK 与阈值</h2>
+        <p>
+          不同问题需要的召回条数不同。<code>EmbeddingStoreContentRetriever</code> 支持按查询动态决定
+          <code>maxResults</code> 与 <code>minScore</code>。
+        </p>
+        <pre data-lang="java" data-file="动态参数">ContentRetriever retriever = EmbeddingStoreContentRetriever.builder()
+        .embeddingStore(store)
+        .embeddingModel(embeddingModel)
+        .dynamicMaxResults(q -&gt; q.text().contains("对比") ? 8 : 4)
+        .dynamicMinScore(q -&gt; 0.6)
+        .build();</pre>
+        <p>
+          默认 <code>maxResults</code> 是 3、<code>minScore</code> 是 0.0；阈值过滤发生在检索之后，
+          过滤后不会自动补足条数。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:70">EmbeddingStoreContentRetriever.java:70</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:72">EmbeddingStoreContentRetriever.java:72</span>
+        </p>
+
+        <h2 id="aggregate">聚合与重排：RRF 与 ScoringModel</h2>
+        <p>
+          多路召回会产生重复内容。<code>DefaultContentAggregator</code> 用 RRF（Reciprocal Rank Fusion）
+          按排名融合；<code>ReRankingContentAggregator</code> 则调用 <code>ScoringModel</code> 对每条内容重新打分。
+        </p>
+        <pre data-lang="java" data-file="重排">ContentAggregator rerank = ReRankingContentAggregator.builder()
+        .scoringModel(scoringModel)
+        .maxResults(6)
+        .build();</pre>
+        <p>
+          重排模型可以是 Cohere / Jina 等托管服务，也可以自己实现 <code>ScoringModel</code>。
+          它会增加一次（或多次）模型调用，适合对精度要求高的场景。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/aggregator/DefaultContentAggregator.java:55">DefaultContentAggregator.java:55</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/aggregator/ReRankingContentAggregator.java:51">ReRankingContentAggregator.java:51</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/scoring/ScoringModel.java:25">ScoringModel.java:25</span>
+        </p>
+
+        <h2 id="augmentor">DefaultRetrievalAugmentor：把四段串起来</h2>
+        <pre data-lang="java" data-file="完整链路">RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
+        .queryTransformer(new CompressingQueryTransformer(model))
+        .queryRouter(new DefaultQueryRouter(docs, tickets))
+        .contentAggregator(ReRankingContentAggregator.builder()
+                .scoringModel(scoringModel)
+                .maxResults(6)
+                .build())
+        .build();
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .retrievalAugmentor(augmentor)
+        .build();</pre>
+        <p class="src-line">
+          builder <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/DefaultRetrievalAugmentor.java:371">DefaultRetrievalAugmentor.java:371</span>；
+          接到 AI Service <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:939">AiServices.java:939</span>。
+        </p>
+
+        <h2 id="evaluate">怎么判断有没有变好</h2>
+        <p>
+          不要只看「回答像不像」。至少准备三类样本：答案在文档里、答案不在文档里、需要多跳检索。
+          然后用 recall@k、MRR、context precision 与人工抽检对比改动前后；没有标注集时，先记录基线再谈优化。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>要做什么</th><th>用什么</th></tr></thead>
+            <tbody>
+              <tr><td>多轮追问改写</td><td><code>CompressingQueryTransformer</code></td></tr>
+              <tr><td>生成多个查询</td><td><code>ExpandingQueryTransformer</code></td></tr>
+              <tr><td>多路召回</td><td><code>DefaultQueryRouter(retriever...)</code></td></tr>
+              <tr><td>模型选路</td><td><code>LanguageModelQueryRouter</code></td></tr>
+              <tr><td>排名融合</td><td><code>DefaultContentAggregator</code></td></tr>
+              <tr><td>重排</td><td><code>ReRankingContentAggregator</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">一上来就开改写 + 多查询 + 重排</span>
+          <p>链路越长越慢也越贵。先用基线定位问题：召回不到、排序不对、还是拼装不好。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">多路召回后不去重</span>
+          <p>同一段内容可能被多次召回；用聚合器融合，别直接全塞进提示词。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>下一章 <strong>10 Agent 与工作流</strong> 仍在规划中；先把 09 的链路跑通。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

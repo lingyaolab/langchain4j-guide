@@ -14,7 +14,7 @@ langchain4j-learn/         站点本体（发布时把这个目录作为站点�
 ├── index.html             首页（学习进度、章节入口、更新记录）
 ├── 404.html               站内 404（自包含样式，任意深度可用）
 ├── robots.txt
-├── chapters/              第 00–08 章（09–15 规划中）
+├── chapters/              第 00–09 章（10–15 规划中）
 ├── appendix/              附录 A–E
 └── assets/                base.css / site.js / nav.js / search-index.js / favicon.svg
 
@@ -45,7 +45,7 @@ tar -xzf langchain4j-1.23.0.tar.gz
 
 ## 当前进度
 
-已可读：00–08 章 + 附录 A–E（14 页）。规划中：09 RAG 进阶、10 Agent 与工作流、11 MCP、12 可观测性与测试、13 生产化、14 综合案例、15 迁移与选型。
+已可读：00–09 章 + 附录 A–E（15 页）。规划中：10 Agent 与工作流、11 MCP、12 可观测性与测试、13 生产化、14 综合案例、15 迁移与选型。
 
 ## 来源与许可
 

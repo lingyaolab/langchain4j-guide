@@ -2,6 +2,19 @@
 
 站点版本与所讲解的框架版本分开记：框架版本固定在 **LangChain4j 1.23.0**，站点版本见下。
 
+## v0.2.0 — 2026-11-07
+
+新增 09「RAG 进阶」，把基础 RAG 的四段流水线升级成可替换策略。
+
+### 内容
+
+- 查询转换：`CompressingQueryTransformer` 处理多轮追问，`ExpandingQueryTransformer` 生成多查询（默认 3 个变体）。
+- 路由：`DefaultQueryRouter` 全量分发 vs `LanguageModelQueryRouter` 按描述选路。
+- 检索参数：`dynamicMaxResults` / `dynamicMinScore`，默认 topK 3、minScore 0.0。
+- 聚合与重排：`DefaultContentAggregator` 的 RRF 融合，`ReRankingContentAggregator` + `ScoringModel` 重排。
+- `DefaultRetrievalAugmentor` 串起四段，并通过 `AiServices.retrievalAugmentor(...)` 接入业务接口。
+- 评测：recall@k、MRR、context precision 与基线意识。
+
 ## v0.1.0 — 2026-11-07
 
 新站开张：00–08 共 9 个正文章节已可读，加 5 个附录。
