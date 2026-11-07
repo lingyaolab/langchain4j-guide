@@ -2,6 +2,19 @@
 
 站点版本与所讲解的框架版本分开记：框架版本固定在 **LangChain4j 1.23.0**，站点版本见下。
 
+## v0.3.0 — 2026-11-07
+
+新增 10「Agent 与工作流」，把单次工具循环扩展到多 Agent 编排。
+
+### 内容
+
+- `@Agent` 声明式 Agent 与 `AgenticServices.agentBuilder(...)`。
+- `AgenticScope`：`outputKey` 写状态，下游 `@V` 读状态。
+- 四种工作流：`sequenceBuilder`、`parallelBuilder`、`loopBuilder`、`conditionalBuilder`。
+- `loopBuilder` 的 `maxIterations` + `exitCondition` 双边界。
+- `supervisorBuilder` 与 `langchain4j-agentic-patterns` 的规划模式边界。
+- 生产化：模型/工具超时仍在底层配置，工作流层用循环边界、监听器与 HITL。
+
 ## v0.2.0 — 2026-11-07
 
 新增 09「RAG 进阶」，把基础 RAG 的四段流水线升级成可替换策略。
