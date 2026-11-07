@@ -14,7 +14,7 @@ langchain4j-learn/         站点本体（发布时把这个目录作为站点�
 ├── index.html             首页（学习进度、章节入口、更新记录）
 ├── 404.html               站内 404（自包含样式，任意深度可用）
 ├── robots.txt
-├── chapters/              第 00–15 章
+├── chapters/              第 00–15 章 + 00A 信息流实验室
 ├── appendix/              附录 A–E
 └── assets/                base.css / site.js / nav.js / search-index.js / favicon.svg
 
@@ -45,7 +45,7 @@ tar -xzf langchain4j-1.23.0.tar.gz
 
 ## 当前进度
 
-已全部可读：00–15 章 + 附录 A–E（21 页）。
+已全部可读：00–15 章 + 00A 信息流实验室 + 附录 A–E（22 页）。
 
 ## 来源与许可
 
