@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="03 Prompt 与消息：模板、变量与多模态 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。" />
+    <title>03 Prompt 与消息：模板、变量与多模态 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="03-prompt" data-root="..">
+    <main>
+      <article class="article">
+        <h1>03 · Prompt 与消息：模板、变量与多模态</h1>
+        <p class="lede">SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>用消息类型而不是一坨字符串表达提示词</li>
+          <li>用 <code>PromptTemplate</code> 管理变量</li>
+          <li>把图片或文件作为 <code>Content</code> 放进用户消息</li>
+          <li>知道模板变量缺失时会发生什么</li>
+        </ul>
+
+        <h2 id="why">先说为什么：提示词是消息列表，不是字符串</h2>
+        <p>
+          模型接口最终接收的是 <code>List&lt;ChatMessage&gt;</code>。字符串只是
+          <code>UserMessage.from(text)</code> 的快捷方式；一旦要做多轮、工具或图片，就必须回到消息层。
+        </p>
+
+        <h2 id="messages">四种消息：System / User / AI / Tool</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>类型</th><th>谁产生</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>SystemMessage</code></td><td>应用</td><td>角色、边界、输出格式</td></tr>
+              <tr><td><code>UserMessage</code></td><td>用户 / 应用</td><td>本轮问题，可带文本与图片</td></tr>
+              <tr><td><code>AiMessage</code></td><td>模型</td><td>回答或工具调用请求</td></tr>
+              <tr><td><code>ToolExecutionResultMessage</code></td><td>框架</td><td>工具执行结果，回填给模型</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/SystemMessage.java:24">SystemMessage.java:24</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/UserMessage.java:39">UserMessage.java:39</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/AiMessage.java:32">AiMessage.java:32</span>
+        </p>
+
+        <h2 id="templates">PromptTemplate：变量、默认值与转义</h2>
+        <pre data-lang="java" data-file="PromptTemplate">PromptTemplate template = PromptTemplate.from("""
+        你是{{role}}。请用不超过 {{maxWords}} 字回答：
+        {{question}}
+        """);
+
+Prompt prompt = template.apply(Map.of(
+        "role", "Java 架构师",
+        "maxWords", 120,
+        "question", "什么时候该把 RAG 拆成独立服务？"));
+
+String text = model.chat(prompt.toUserMessage().singleText());</pre>
+        <p>
+          <code>PromptTemplate.from(...)</code> 支持命名变量；<code>apply(Map)</code> 会把变量填进去。
+          变量缺失时会在渲染阶段抛异常，而不是静默留空。
+        </p>
+        <p class="src-line">
+          模板入口 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:152">PromptTemplate.java:152</span>；
+          渲染 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:127">PromptTemplate.java:127</span>。
+        </p>
+
+        <h2 id="params">模板变量与运行时参数</h2>
+        <p>
+          「模板变量」是提示词里的 <code>{{name}}</code>；「运行时参数」是
+          <code>temperature</code>、<code>maxOutputTokens</code> 这些模型参数。两者不要混在一个 Map 里：
+          前者进 <code>PromptTemplate.apply</code>，后者进 <code>ChatRequestParameters</code>。
+        </p>
+
+        <h2 id="multimodal">多模态：文本、图片与文件</h2>
+        <pre data-lang="java" data-file="图片输入">UserMessage message = UserMessage.from(
+        TextContent.from("这张架构图里，哪个组件最可能成为瓶颈？"),
+        ImageContent.from("https://example.com/arch.png"));
+
+ChatResponse response = model.chat(message);</pre>
+        <p>
+          图片是否被支持取决于 provider 与模型；不支持时通常会在 HTTP 层报参数错误。
+          <code>ImageContent.from(...)</code> 可以接收 URL 或 base64。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>要做的事</th><th>API</th></tr></thead>
+            <tbody>
+              <tr><td>纯文本用户消息</td><td><code>UserMessage.from(text)</code></td></tr>
+              <tr><td>系统消息</td><td><code>SystemMessage.from(text)</code></td></tr>
+              <tr><td>带图片</td><td><code>UserMessage.from(Content...)</code></td></tr>
+              <tr><td>模板</td><td><code>PromptTemplate.from(template)</code></td></tr>
+              <tr><td>填变量</td><td><code>template.apply(Map)</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">把 JSON 示例直接写进系统提示词</span>
+          <p>花括号可能被模板引擎当成变量；用 <code>{</code> / <code>}</code> 转义，或改用代码块。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">以为 <code>SystemMessage</code> 一定生效</span>
+          <p>部分模型/网关会忽略 system 角色；关键约束要在用户消息里再强调一次。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="04-ai-services.html">04 AI Services</a>，把这些消息与模型调用收进一个接口。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

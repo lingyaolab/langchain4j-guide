@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="05 结构化输出：JSON Schema、POJO 与校验 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。" />
+    <title>05 结构化输出：JSON Schema、POJO 与校验 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="05-structured-output" data-root="..">
+    <main>
+      <article class="article">
+        <h1>05 · 结构化输出：JSON Schema、POJO 与校验</h1>
+        <p class="lede">JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>让 AI Service 直接返回 record / POJO</li>
+          <li>理解框架如何从返回类型生成 JSON Schema</li>
+          <li>处理枚举、列表与嵌套对象</li>
+          <li>知道失败时怎么补救</li>
+        </ul>
+
+        <h2 id="why">先说为什么：结构化输出不是 prompt 技巧</h2>
+        <p>
+          在 LangChain4j 里，返回类型就是契约：<code>AiServices</code> 会为 POJO / record 生成
+          JSON Schema，要求模型按 schema 输出，再把 JSON 解析成对象。你不需要手写
+          「请返回 JSON」这段提示词。
+        </p>
+
+        <h2 id="json-schema">JSON Schema：让模型知道字段</h2>
+        <p>
+          <code>ServiceOutputParser.jsonSchema(Type)</code> 负责从返回类型推导 schema；
+          <code>outputFormatInstructions(Type)</code> 生成给模型的格式说明。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/output/ServiceOutputParser.java:77">ServiceOutputParser.java:77</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/output/ServiceOutputParser.java:98">ServiceOutputParser.java:98</span>
+        </p>
+
+        <h2 id="pojo">POJO 与 record：返回值映射</h2>
+        <pre data-lang="java" data-file="返回 record">record Movie(String title, int year, List&lt;String&gt; genres) {}
+
+interface MovieAssistant {
+    @UserMessage("推荐一部 {{genre}} 电影，返回 JSON")
+    Movie recommend(@V("genre") String genre);
+}
+
+MovieAssistant assistant = AiServices.create(MovieAssistant.class, model);
+Movie movie = assistant.recommend("科幻");
+System.out.println(movie.title() + " / " + movie.year());</pre>
+
+        <h2 id="enums">枚举、列表与嵌套对象</h2>
+        <ul>
+          <li>枚举字段会生成 <code>enum</code> 约束；模型给出不在枚举里的值会解析失败。</li>
+          <li><code>List&lt;T&gt;</code> / <code>Set&lt;T&gt;</code> 会生成数组 schema。</li>
+          <li>嵌套 record 会递归生成对象 schema；避免循环引用。</li>
+        </ul>
+
+        <h2 id="validation">校验与失败重试</h2>
+        <p>
+          框架负责「JSON → 对象」的解析，但业务校验（金额为正、日期范围）仍要你自己做。
+          常见做法是校验失败后把错误信息拼回下一轮请求，让模型修正；注意设置最大重试次数，避免无限循环。
+        </p>
+        <div class="callout warn">
+          <span class="ct">模型返回 markdown 代码围栏</span>
+          <p>部分模型会包一层 markdown 代码围栏；解析器通常能处理，但最好在系统提示里明确「只输出 JSON」。</p>
+        </div>
+
+        <h2 id="streaming">流式结构化输出</h2>
+        <p>
+          流式场景下，部分 token 不是完整 JSON，不能边收边解析成对象。要么先聚合完整响应再解析，
+          要么让接口返回 <code>TokenStream</code>，在 <code>onCompleteResponse</code> 里处理最终对象。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>返回类型</th><th>解析结果</th></tr></thead>
+            <tbody>
+              <tr><td><code>String</code></td><td>原始文本</td></tr>
+              <tr><td><code>record</code> / POJO</td><td>JSON 反序列化后的对象</td></tr>
+              <tr><td><code>List&lt;T&gt;</code></td><td>对象列表</td></tr>
+              <tr><td><code>enum</code></td><td>枚举常量</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">字段名和业务含义不一致</span>
+          <p>模型按字段名与描述生成内容；用 <code>@JsonPropertyDescription</code> 补语义，别用 <code>f1</code>、<code>f2</code>。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">把校验失败当异常吞掉</span>
+          <p>要么重试，要么把错误交给上层；静默返回 null 会让问题更难查。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="06-tools.html">06 Tool Calling</a>，让模型调用你的 Java 方法。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

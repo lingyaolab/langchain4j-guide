@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="MessageWindowChatMemory、ChatMemoryStore、窗口淘汰、多会话与持久化。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="07 Memory：窗口、存储与多用户隔离 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="MessageWindowChatMemory、ChatMemoryStore、窗口淘汰、多会话与持久化。" />
+    <title>07 Memory：窗口、存储与多用户隔离 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="07-memory" data-root="..">
+    <main>
+      <article class="article">
+        <h1>07 · Memory：窗口、存储与多用户隔离</h1>
+        <p class="lede">MessageWindowChatMemory、ChatMemoryStore、窗口淘汰、多会话与持久化。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>用 <code>MessageWindowChatMemory</code> 控制上下文长度</li>
+          <li>用 <code>ChatMemoryStore</code> 把消息落到 Redis 或数据库</li>
+          <li>用 <code>@MemoryId</code> 做多用户隔离</li>
+          <li>知道窗口淘汰时哪些消息会被保留</li>
+        </ul>
+
+        <h2 id="why">先说为什么：记忆是消息窗口，不是数据库</h2>
+        <p>
+          LangChain4j 的 <code>ChatMemory</code> 负责「本次请求要带哪些历史消息」；
+          真正的持久化由 <code>ChatMemoryStore</code> 完成。两者分开，方便你换存储而不改业务。
+        </p>
+
+        <h2 id="memory-window">MessageWindowChatMemory：窗口与淘汰</h2>
+        <pre data-lang="java" data-file="窗口记忆">ChatMemory memory = MessageWindowChatMemory.withMaxMessages(20);
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .chatMemory(memory)
+        .build();</pre>
+        <p>
+          窗口大小必须显式设置：<code>withMaxMessages(n)</code> 或
+          <code>builder().maxMessages(n)</code>。不设置时构造函数会因
+          <code>maxMessagesProvider</code> 为空而失败。
+        </p>
+
+        <h2 id="store">ChatMemoryStore：内存、Redis 与自定义</h2>
+        <p>
+          <code>ChatMemoryStore</code> 只有三个核心方法：读取、更新、删除某个 memoryId 的消息列表。
+          实现它就能接 Redis、JDBC 或对象存储。
+        </p>
+        <pre data-lang="java" data-file="自定义 Store 骨架">class RedisChatMemoryStore implements ChatMemoryStore {
+    public List&lt;ChatMessage&gt; getMessages(Object memoryId) { ... }
+    public void updateMessages(Object memoryId, List&lt;ChatMessage&gt; messages) { ... }
+    public void deleteMessages(Object memoryId) { ... }
+}</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/memory/chat/ChatMemoryStore.java:27">ChatMemoryStore.java:27</span>
+        </p>
+
+        <h2 id="advisor">ChatMemoryAccess 与多轮调用</h2>
+        <p>
+          AI Service 每次调用会自动读取记忆、追加本轮消息、再把 AI 回答写回。
+          你不需要手动维护消息列表；需要清空时通过 <code>ChatMemory.clear()</code> 或删除 store 中的键。
+        </p>
+
+        <h2 id="multi-user">多用户、多会话与隔离</h2>
+        <pre data-lang="java" data-file="多用户">interface Assistant {
+    String chat(@MemoryId String userId, @UserMessage String message);
+}
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .chatMemoryProvider(id -&gt; MessageWindowChatMemory.withMaxMessages(20))
+        .build();</pre>
+        <p>
+          <code>@MemoryId</code> 的值会传给 <code>ChatMemoryProvider</code>；生产环境建议用
+          <code>tenantId + ":" + userId</code>，避免不同租户撞键。
+        </p>
+
+        <h2 id="persistence">持久化与重启恢复</h2>
+        <p>
+          进程内记忆会随重启丢失。要恢复，必须把消息写进外部 store，并保证同一个 memoryId
+          在重启后仍能查到。注意消息对象的 JSON 兼容性，升级版本时先做回归。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>需求</th><th>写法</th></tr></thead>
+            <tbody>
+              <tr><td>固定窗口</td><td><code>MessageWindowChatMemory.withMaxMessages(n)</code></td></tr>
+              <tr><td>换存储</td><td>实现 <code>ChatMemoryStore</code></td></tr>
+              <tr><td>多用户</td><td><code>@MemoryId</code> + <code>chatMemoryProvider</code></td></tr>
+              <tr><td>清空</td><td><code>memory.clear()</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">窗口设得太大</span>
+          <p>历史全部塞进上下文会推高成本与延迟；20–50 条通常够用，长对话靠摘要而不是无限窗口。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">memoryId 用随机 UUID</span>
+          <p>每次请求都换 id 等于没有记忆；要用稳定的会话键。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="08-rag-basics.html">08 RAG 基础</a>，把外部知识接进模型。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

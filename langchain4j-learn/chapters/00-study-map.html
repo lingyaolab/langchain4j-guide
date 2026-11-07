@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="三条学习主线、章节依赖图、前置知识、没有 API Key 能学到哪，以及 LangChain4j 与 Spring AI 的边界。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="00 学习地图：LangChain4j 适合谁、和 Spring AI 怎么选 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="三条学习主线、章节依赖图、前置知识、没有 API Key 能学到哪，以及 LangChain4j 与 Spring AI 的边界。" />
+    <title>00 学习地图：LangChain4j 适合谁、和 Spring AI 怎么选 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="00-study-map" data-root="..">
+    <main>
+      <article class="article">
+        <h1>00 · 学习地图：LangChain4j 适合谁、和 Spring AI 怎么选</h1>
+        <p class="lede">三条学习主线、章节依赖图、前置知识、没有 API Key 能学到哪，以及 LangChain4j 与 Spring AI 的边界。</p>
+        <h2 id="why-site">为什么要再造一个文档站</h2>
+        <p>
+          官方文档按能力分篇，适合已经知道要查什么的人；但第一次做 Java AI 应用时，真正难的是
+          「先建哪个对象、消息怎么拼、失败在哪一层」。本站按工程落地顺序重排，并把每个结论回源到
+          <code>1.23.0</code> 的 Java 源码，方便你在 IDE 里直接跳过去。
+        </p>
+        <div class="callout">
+          <span class="ct">本站的默认假设</span>
+          <p>
+            JDK 17、Maven、一个 OpenAI 兼容端点（DeepSeek 或 Ollama）。示例不绑定 Spring，
+            但会标出与 Spring Boot starter 的差异。
+          </p>
+        </div>
+
+        <h2 id="three-lines">三条学习主线</h2>
+        <div class="compare">
+          <div class="col pick">
+            <h4>① 跟做线</h4>
+            <ul>
+              <li>01 章先跑通一次 <code>chat()</code></li>
+              <li>02–04 章把模型、消息、AI Service 拆开</li>
+              <li>每段代码都能单独复制运行</li>
+            </ul>
+          </div>
+          <div class="col">
+            <h4>② 理解线</h4>
+            <ul>
+              <li>看接口契约：<code>ChatModel</code> / <code>StreamingChatModel</code></li>
+              <li>看请求对象：<code>ChatRequest</code> 与 <code>ChatResponse</code></li>
+              <li>看 AI Service 如何把接口方法翻译成模型调用</li>
+            </ul>
+          </div>
+          <div class="col">
+            <h4>③ 避坑线</h4>
+            <ul>
+              <li>每章末尾给「你会看到 X → 因为 Y → 改成 Z」</li>
+              <li>重点标出 0.x 到 1.x 的 API 变化</li>
+              <li>明确稳定版与 beta 版的边界</li>
+            </ul>
+          </div>
+        </div>
+
+        <h2 id="deps">章节依赖图：为什么是这个顺序</h2>
+        <ol class="steps">
+          <li><span class="sh">01 环境</span><div>先让 classpath 正确，再谈 API。</div></li>
+          <li><span class="sh">02–03 模型与消息</span><div><code>ChatModel</code> 是最小契约，消息是它的输入输出。</div></li>
+          <li><span class="sh">04–06 AI Service、结构化输出、工具</span><div>声明式接口把前两章包起来，工具是模型与 Java 的边界。</div></li>
+          <li><span class="sh">07–08 记忆与 RAG</span><div>多轮与知识库都需要「消息 + 检索」这两块地基。</div></li>
+        </ol>
+
+        <h2 id="java-pre">前置知识自查</h2>
+        <ul class="goals">
+          <li>会写 Maven 的 <code>pom.xml</code>，知道 <code>dependencyManagement</code> 是什么</li>
+          <li>能读懂 Java 泛型、<code>List&lt;T&gt;</code>、<code>Optional</code> 与 record</li>
+          <li>知道 HTTP 401 / 429 大概是什么意思</li>
+          <li>不要求 Spring 经验；有 Spring 经验会更容易理解自动装配</li>
+        </ul>
+
+        <h2 id="apikey">没有 API Key 能学到哪一步</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>没有 Key</th><th>能做什么</th></tr></thead>
+            <tbody>
+              <tr><td>01 章</td><td>编译、看依赖树、理解模块划分</td></tr>
+              <tr><td>02–03 章</td><td>构造 <code>ChatRequest</code>、<code>PromptTemplate</code>，用假模型跑消息流</td></tr>
+              <tr><td>04–08 章</td><td>读接口与源码；真正调用模型需要 Key 或本地 Ollama</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="source-truth">事实来源与版本承诺</h2>
+        <p>
+          全书对应 <strong>LangChain4j 1.23.0</strong>、<strong>JDK 17</strong>。稳定模块版本是
+          <code>1.23.0</code>，实验模块是 <code>1.23.0-beta33</code>，BOM 会分别管理
+          <span class="src" data-src="langchain4j-bom/pom.xml:13">pom.xml:13</span>。
+          JDK 要求见 <span class="src" data-src="langchain4j-parent/pom.xml:39">pom.xml:39</span>。
+        </p>
+
+        <h2 id="next">下一步</h2>
+        <p>
+          从 <a href="01-setup.html">01 环境与依赖</a> 开始；如果你已经能跑，直接跳到
+          <a href="04-ai-services.html">04 AI Services</a> 看声明式接口。
+        </p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

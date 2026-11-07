@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="1.23.0 的稳定/beta 双版本、0.x 到 1.x 的变化、与 Spring AI 的概念映射。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="E 迁移与版本：从 0.x / Spring AI 过来 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="1.23.0 的稳定/beta 双版本、0.x 到 1.x 的变化、与 Spring AI 的概念映射。" />
+    <title>E 迁移与版本：从 0.x / Spring AI 过来 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="migration" data-root="..">
+    <main>
+      <article class="article">
+        <h1>E · 迁移与版本：从 0.x / Spring AI 过来</h1>
+        <p class="lede">1.23.0 的稳定/beta 双版本、0.x 到 1.x 的变化、与 Spring AI 的概念映射。</p>
+        <h2 id="spring-ai">从 Spring AI 映射过来</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Spring AI</th><th>LangChain4j</th></tr></thead>
+            <tbody>
+              <tr><td><code>ChatClient</code></td><td><code>AiServices</code> 接口 / <code>ChatModel</code></td></tr>
+              <tr><td><code>ChatModel</code></td><td><code>ChatModel</code></td></tr>
+              <tr><td><code>ChatMemory</code> + Advisor</td><td><code>ChatMemory</code> + <code>chatMemory(...)</code></td></tr>
+              <tr><td><code>QuestionAnswerAdvisor</code></td><td><code>ContentRetriever</code> / <code>RetrievalAugmentor</code></td></tr>
+              <tr><td><code>@Tool</code></td><td><code>@Tool</code> + AI Service</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="versioning">稳定版与 beta 版</h2>
+        <p>
+          BOM 版本是 <code>1.23.0</code>，稳定模块跟 BOM 走；实验模块是
+          <code>1.23.0-beta33</code>。引入实验模块时，BOM 已替你写好 beta 版本，
+          不要手动把稳定模块也改成 beta。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-bom/pom.xml:13">pom.xml:13</span>
+        </p>
+
+        <h2 id="api">API 变化</h2>
+        <ul>
+          <li>0.x 的 <code>ChatLanguageModel</code> 在 1.x 中统一为 <code>ChatModel</code>。</li>
+          <li>工具上下文从早期的 <code>ToolContext</code> 迁到 <code>InvocationContext</code> / 工具执行结果对象。</li>
+          <li>结构化输出由 AI Service 返回类型驱动，少写手拼 JSON 的提示词。</li>
+          <li>RAG 统一到 <code>ContentRetriever</code> 与 <code>RetrievalAugmentor</code>。</li>
+        </ul>
+
+        <h2 id="checklist">迁移检查清单</h2>
+        <ol class="steps">
+          <li><span class="sh">先换 BOM</span><div>把所有模块版本收口到 <code>langchain4j-bom</code>。</div></li>
+          <li><span class="sh">再改接口名</span><div><code>ChatLanguageModel</code> → <code>ChatModel</code>，全局搜索替换。</div></li>
+          <li><span class="sh">最后改工具与 RAG</span><div>按 06 / 08 章的契约重写，别只改包名。</div></li>
+        </ol>
+
+        <h2 id="next">下一步</h2>
+        <p>回到 <a href="../chapters/00-study-map.html">00 学习地图</a> 重新选一条主线。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

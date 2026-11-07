@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="06 Tool Calling：@Tool、上下文与结果 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。" />
+    <title>06 Tool Calling：@Tool、上下文与结果 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="06-tools" data-root="..">
+    <main>
+      <article class="article">
+        <h1>06 · Tool Calling：@Tool、上下文与结果</h1>
+        <p class="lede">@Tool 参数描述、InvocationContext、ToolExecutionResult、并行调用、异常回传与工具循环。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>用 <code>@Tool</code> 把 Java 方法暴露给模型</li>
+          <li>用 <code>@P</code> 写清参数语义，降低模型瞎填的概率</li>
+          <li>用 <code>InvocationContext</code> 读取用户与会话信息</li>
+          <li>用 <code>ToolExecutionResult</code> 控制成功/失败与返回内容</li>
+        </ul>
+
+        <h2 id="why">先说为什么：工具是模型与 Java 的边界</h2>
+        <p>
+          模型只负责「决定调哪个工具、填什么参数」；真正的执行、鉴权、事务都在 Java 侧。
+          <code>AiServices</code> 会自动完成 schema 生成、工具调用解析、结果回填和下一轮模型调用。
+        </p>
+
+        <h2 id="minimal">最小可跑：@Tool 与 AiServices</h2>
+        <pre data-lang="java" data-file="ToolDemo.java">class OrderTools {
+    @Tool("按订单号查询订单状态")
+    String queryOrder(@P("订单号，例如 SO-20261106-001") String orderNo) {
+        return "SHIPPED"; // 真实项目里查数据库
+    }
+}
+
+interface OrderAssistant {
+    String ask(String question);
+}
+
+OrderAssistant assistant = AiServices.builder(OrderAssistant.class)
+        .chatModel(model)
+        .tools(new OrderTools())
+        .build();
+
+System.out.println(assistant.ask("帮我查一下 SO-20261106-001"));</pre>
+        <p class="src-line">
+          注解定义 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/agent/tool/Tool.java:26">Tool.java:26</span>；
+          参数描述 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/agent/tool/P.java:44">P.java:44</span>。
+        </p>
+
+        <h2 id="tool-annotation">@Tool：名字、描述与参数</h2>
+        <ul>
+          <li><code>@Tool("...")</code> 是给模型看的描述；不写 <code>name</code> 时使用方法名。</li>
+          <li><code>@P</code> 写参数含义、格式与示例；模型主要靠它填参。</li>
+          <li>返回对象会被序列化成 JSON；返回 <code>void</code> 时发送 "Success"。</li>
+          <li><code>@Tool(returnBehavior = IMMEDIATE)</code> 可以让工具结果直接作为最终回答。</li>
+        </ul>
+
+        <h2 id="tool-context">ToolContext：把用户与租户带进工具</h2>
+        <p>
+          1.23 里用 <code>InvocationContext</code> 读取本次调用信息：用户消息、memory id、调用参数等。
+          它可以作为工具方法参数，由框架注入，不需要模型填。
+        </p>
+        <pre data-lang="java" data-file="读取调用上下文">@Tool("查询当前用户的订单")
+String myOrder(InvocationContext ctx) {
+    Object userId = ctx.invocationParameters().get("userId");
+    return orderService.findByUser(String.valueOf(userId));
+}</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/invocation/InvocationContext.java:24">InvocationContext.java:24</span>
+        </p>
+
+        <h2 id="tool-result">ToolResult：成功、失败与直接返回</h2>
+        <p>
+          需要控制结构化结果或错误状态时，返回 <code>ToolExecutionResult</code>：
+        </p>
+        <pre data-lang="java" data-file="ToolExecutionResult">@Tool("转账")
+ToolExecutionResult transfer(String from, String to, long cents) {
+    try {
+        bank.transfer(from, to, cents);
+        return ToolExecutionResult.builder()
+                .resultText("转账成功")
+                .build();
+    } catch (Exception e) {
+        return ToolExecutionResult.builder()
+                .isError(true)
+                .resultText("转账失败：" + e.getMessage())
+                .build();
+    }
+}</pre>
+
+        <h2 id="parallel">并行工具调用与顺序</h2>
+        <p>
+          模型可能在一轮里返回多个工具调用。框架默认可以并行执行；如果工具有顺序依赖，
+          应拆成多个工具或让模型分轮调用。不要假设多个工具一定按数组顺序执行。
+        </p>
+
+        <h2 id="errors">工具异常怎么回到模型</h2>
+        <p>
+          默认策略是：参数错误可能直接失败；执行异常会把
+          <code>Tool execution failed: ...</code> 回给模型，让它有机会换方案。
+          需要自定义时，用 <code>AiServices.toolExecutionErrorHandler(...)</code>。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>要做的事</th><th>API</th></tr></thead>
+            <tbody>
+              <tr><td>暴露工具</td><td><code>@Tool("描述")</code></td></tr>
+              <tr><td>描述参数</td><td><code>@P("含义")</code></td></tr>
+              <tr><td>读调用上下文</td><td><code>InvocationContext</code></td></tr>
+              <tr><td>控制结果</td><td><code>ToolExecutionResult</code></td></tr>
+              <tr><td>直接返回</td><td><code>ReturnBehavior.IMMEDIATE</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">工具描述写「查询订单」</span>
+          <p>太短会让模型不知道参数格式；写清「按订单号查状态，返回 SHIPPED/DELIVERED」。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">把鉴权交给模型</span>
+          <p>用户 id、租户 id 必须来自 <code>InvocationContext</code> 或服务端会话，不能让模型填。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="07-memory.html">07 Memory</a>，让多轮对话记住上下文。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="langchain4j-bom、core 与 open-ai 模块、DeepSeek/OpenAI 兼容端点、Ollama、第一段可运行代码。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="01 环境与依赖：JDK 17 + Maven 跑通第一次 chat · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="langchain4j-bom、core 与 open-ai 模块、DeepSeek/OpenAI 兼容端点、Ollama、第一段可运行代码。" />
+    <title>01 环境与依赖：JDK 17 + Maven 跑通第一次 chat · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="01-setup" data-root="..">
+    <main>
+      <article class="article">
+        <h1>01 · 环境与依赖：JDK 17 + Maven 跑通第一次 chat</h1>
+        <p class="lede">langchain4j-bom、core 与 open-ai 模块、DeepSeek/OpenAI 兼容端点、Ollama、第一段可运行代码。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>用 BOM 管住 LangChain4j 各模块版本</li>
+          <li>用 OpenAI 兼容端点接 DeepSeek，或用 Ollama 本地跑</li>
+          <li>写出一段不依赖 Spring 的 <code>main</code> 方法并拿到回答</li>
+          <li>知道 401 / 404 / 模型名错误分别出在哪一层</li>
+        </ul>
+
+        <h2 id="why">先说为什么：LangChain4j 不是一个 jar</h2>
+        <p>
+          它按能力拆成很多模块：<code>langchain4j-core</code> 放契约与数据模型，
+          <code>langchain4j</code> 放 AI Services、记忆与 RAG 的默认实现，
+          <code>langchain4j-open-ai</code> 只是其中一个 provider。模块的版本由 BOM 统一管理。
+        </p>
+        <pre data-lang="xml" data-file="pom.xml">&lt;properties&gt;
+  &lt;maven.compiler.release&gt;17&lt;/maven.compiler.release&gt;
+  &lt;langchain4j.version&gt;1.23.0&lt;/langchain4j.version&gt;
+&lt;/properties&gt;
+
+&lt;dependencyManagement&gt;
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+      &lt;artifactId&gt;langchain4j-bom&lt;/artifactId&gt;
+      &lt;version&gt;${langchain4j.version}&lt;/version&gt;
+      &lt;type&gt;pom&lt;/type&gt;
+      &lt;scope&gt;import&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+&lt;/dependencyManagement&gt;
+
+&lt;dependencies&gt;
+  &lt;dependency&gt;
+    &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+    &lt;artifactId&gt;langchain4j&lt;/artifactId&gt;
+  &lt;/dependency&gt;
+  &lt;dependency&gt;
+    &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+    &lt;artifactId&gt;langchain4j-open-ai&lt;/artifactId&gt;
+  &lt;/dependency&gt;
+&lt;/dependencies&gt;</pre>
+
+        <h2 id="minimal">最小可跑：一个 Maven 工程 + 一次 chat</h2>
+        <pre data-lang="java" data-file="src/main/java/demo/Main.java">import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+
+public class Main {
+    public static void main(String[] args) {
+        ChatModel model = OpenAiChatModel.builder()
+                .baseUrl("https://api.deepseek.com/v1")
+                .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+                .modelName("deepseek-chat")
+                .build();
+
+        String answer = model.chat("用一句话解释什么是 RAG");
+        System.out.println(answer);
+    }
+}</pre>
+        <p class="src-line">
+          模型入口 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>；
+          OpenAI 构造器 <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:233">OpenAiChatModel.java:233</span>。
+        </p>
+
+        <h2 id="line-by-line">逐行解读：容易懵的地方</h2>
+        <ol class="steps">
+          <li><span class="sh">baseUrl 不是厂商枚举</span><div>只要对方兼容 OpenAI 的 <code>/chat/completions</code>，就复用 <code>OpenAiChatModel</code>。</div></li>
+          <li><span class="sh">apiKey 必须在请求前有值</span><div>为空时通常会在第一次调用时得到 401，而不是 <code>build()</code> 就报错。</div></li>
+          <li><span class="sh">modelName 是服务端认的名字</span><div>DeepSeek 用 <code>deepseek-chat</code>；Ollama 用你 <code>ollama list</code> 里的名字。</div></li>
+        </ol>
+
+        <h2 id="versions">版本对齐：1.23.0 到底要什么</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>项目</th><th>值</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>JDK</td><td>17</td><td><span class="src" data-src="langchain4j-parent/pom.xml:39">pom.xml:39</span></td></tr>
+              <tr><td>稳定模块</td><td>1.23.0</td><td>core、langchain4j、open-ai 等</td></tr>
+              <tr><td>实验模块</td><td>1.23.0-beta33</td><td>BOM 里单独管理</td></tr>
+              <tr><td>BOM 坐标</td><td>dev.langchain4j:langchain4j-bom:1.23.0</td><td>不要抄成 <code>1.23.0-beta33</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="providers">模型接入：OpenAI 兼容、Ollama 与 DashScope</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>场景</th><th>依赖</th><th>构造器</th></tr></thead>
+            <tbody>
+              <tr><td>DeepSeek / OpenAI 兼容</td><td><code>langchain4j-open-ai</code></td><td><code>OpenAiChatModel.builder()</code></td></tr>
+              <tr><td>本地 Ollama</td><td><code>langchain4j-ollama</code></td><td><code>OllamaChatModel.builder()</code></td></tr>
+              <tr><td>DashScope</td><td><code>langchain4j-community-dashscope</code></td><td><code>QwenChatModel.builder()</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre data-lang="java" data-file="Ollama 本地">ChatModel model = OllamaChatModel.builder()
+        .baseUrl("http://localhost:11434")
+        .modelName("qwen3:8b")
+        .build();</pre>
+
+        <h2 id="cheatsheet">依赖与配置速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>要什么</th><th>加什么</th></tr></thead>
+            <tbody>
+              <tr><td>只写契约与数据模型</td><td><code>langchain4j-core</code></td></tr>
+              <tr><td>AI Services、记忆、RAG 默认实现</td><td><code>langchain4j</code></td></tr>
+              <tr><td>OpenAI 兼容模型</td><td><code>langchain4j-open-ai</code></td></tr>
+              <tr><td>本地 embedding</td><td><code>langchain4j-embeddings-all-minilm-l6-v2</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">把 baseUrl 写成 <code>https://api.deepseek.com</code></span>
+          <p><strong>因为</strong>客户端会在后面拼 <code>/chat/completions</code>，少了 <code>/v1</code> 可能 404。<strong>改成</strong>按厂商文档补全路径。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">把所有模块都写 <code>1.23.0-beta33</code></span>
+          <p><strong>因为</strong>稳定模块在 BOM 里是 <code>1.23.0</code>。<strong>改成</strong>只写 BOM 版本，模块不写版本。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="02-chatmodel.html">02 ChatModel</a>，把同步、流式与请求对象拆开。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

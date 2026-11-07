@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="08 RAG 基础：加载、切分、Embedding 与检索 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。" />
+    <title>08 RAG 基础：加载、切分、Embedding 与检索 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="08-rag-basics" data-root="..">
+    <main>
+      <article class="article">
+        <h1>08 · RAG 基础：加载、切分、Embedding 与检索</h1>
+        <p class="lede">DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>把文件加载成 <code>Document</code> 并切分成 <code>TextSegment</code></li>
+          <li>选一个 embedding 模型并理解维度</li>
+          <li>把向量写进 <code>EmbeddingStore</code></li>
+          <li>用 <code>ContentRetriever</code> 把召回内容拼进 AI Service</li>
+        </ul>
+
+        <h2 id="why">先说为什么：RAG 是 ETL + 检索 + 拼装</h2>
+        <p>
+          它不是一个类，而是一条流水线：加载文档 → 切分 → 向量化 → 入库 → 查询时召回 → 拼进提示词。
+          LangChain4j 把这些步骤拆成可替换的接口，方便你换解析器、切分器、向量库。
+        </p>
+
+        <h2 id="pipeline">四段流水线：加载、切分、向量化、入库</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>接口 / 类</th><th>你要决定什么</th></tr></thead>
+            <tbody>
+              <tr><td>加载</td><td><code>DocumentLoader</code></td><td>PDF / Markdown / 网页用什么解析器</td></tr>
+              <tr><td>切分</td><td><code>DocumentSplitter</code></td><td>按字符、段落还是 token，重叠多少</td></tr>
+              <tr><td>向量化</td><td><code>EmbeddingModel</code></td><td>本地模型还是 API，维度多少</td></tr>
+              <tr><td>存储</td><td><code>EmbeddingStore</code></td><td>内存、pgvector、Milvus 等</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="loaders">DocumentLoader：文件、URL 与 ClassPath</h2>
+        <pre data-lang="java" data-file="加载文件">Document document = FileSystemDocumentLoader.loadDocument(
+        Path.of("docs/refund.md"),
+        new TextDocumentParser());</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/loader/FileSystemDocumentLoader.java:71">FileSystemDocumentLoader.java:71</span>
+        </p>
+
+        <h2 id="splitters">DocumentSplitter：按字符、段落与 token</h2>
+        <pre data-lang="java" data-file="递归切分">DocumentSplitter splitter = DocumentSplitters.recursive(500, 50);
+List&lt;TextSegment&gt; segments = splitter.split(document);</pre>
+        <p>
+          第一个参数是每段最大长度，第二个是重叠长度。切分粒度直接影响召回质量：
+          太小会丢上下文，太大会挤占提示词预算。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:21">DocumentSplitters.java:21</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/document/DocumentSplitter.java:18">DocumentSplitter.java:18</span>
+        </p>
+
+        <h2 id="embedding">EmbeddingModel：维度与批处理</h2>
+        <p>
+          <code>EmbeddingModel.embed(...)</code> 返回向量；<code>dimension()</code> 给出维度。
+          写入向量库前必须确认维度一致，否则建表或插入会失败。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/embedding/EmbeddingModel.java:39">EmbeddingModel.java:39</span>
+        </p>
+
+        <h2 id="store">EmbeddingStore：内存与 pgvector</h2>
+        <p>
+          <code>InMemoryEmbeddingStore</code> 适合测试；生产常用 pgvector、Milvus、Qdrant 等。
+          store 的职责是保存向量与原文，并支持按相似度检索。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStore.java:27">EmbeddingStore.java:27</span>
+        </p>
+
+        <h2 id="ingestor">EmbeddingStoreIngestor：一条龙入库</h2>
+        <pre data-lang="java" data-file="一条龙入库">EmbeddingStore&lt;TextSegment&gt; store = new InMemoryEmbeddingStore&lt;&gt;();
+
+EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
+        .documentSplitter(DocumentSplitters.recursive(500, 50))
+        .embeddingModel(embeddingModel)
+        .embeddingStore(store)
+        .build();
+
+ingestor.ingest(document);</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStoreIngestor.java:54">EmbeddingStoreIngestor.java:54</span>
+        </p>
+
+        <h2 id="retrieval">ContentRetriever 与 RetrievalAugmentor</h2>
+        <pre data-lang="java" data-file="接进 AI Service">ContentRetriever retriever = EmbeddingStoreContentRetriever.builder()
+        .embeddingStore(store)
+        .embeddingModel(embeddingModel)
+        .maxResults(4)
+        .minScore(0.6)
+        .build();
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .contentRetriever(retriever)
+        .build();</pre>
+        <p>
+          每次调用前，框架会用用户问题召回若干 <code>Content</code>，拼进提示词。
+          <code>maxResults</code> 默认 3、<code>minScore</code> 默认 0.0。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/ContentRetriever.java:36">ContentRetriever.java:36</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:70">EmbeddingStoreContentRetriever.java:70</span>
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>步骤</th><th>API</th></tr></thead>
+            <tbody>
+              <tr><td>加载</td><td><code>FileSystemDocumentLoader.loadDocument(...)</code></td></tr>
+              <tr><td>切分</td><td><code>DocumentSplitters.recursive(...)</code></td></tr>
+              <tr><td>入库</td><td><code>EmbeddingStoreIngestor.builder()</code></td></tr>
+              <tr><td>检索</td><td><code>EmbeddingStoreContentRetriever.builder()</code></td></tr>
+              <tr><td>接 AI Service</td><td><code>.contentRetriever(...)</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">换了 embedding 模型却没重建索引</span>
+          <p>维度或语义空间变了，旧向量不可用；必须全量重算。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">minScore 设得太高</span>
+          <p>召回为空时模型只能瞎答；先看召回条数，再调阈值。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>RAG 进阶（09 章）会讲查询改写、重排与多路召回，目前仍在编写中。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

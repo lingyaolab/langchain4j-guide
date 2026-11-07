@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="依赖冲突、模型解析、401/429、工具参数、RAG 空召回与流式错误。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="B 报错速查：看到什么错，改什么地方 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="依赖冲突、模型解析、401/429、工具参数、RAG 空召回与流式错误。" />
+    <title>B 报错速查：看到什么错，改什么地方 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="errors" data-root="..">
+    <main>
+      <article class="article">
+        <h1>B · 报错速查：看到什么错，改什么地方</h1>
+        <p class="lede">依赖冲突、模型解析、401/429、工具参数、RAG 空召回与流式错误。</p>
+        <h2 id="how">怎么用这一页</h2>
+        <p>
+          先按错误文本定位阶段：构建、模型调用、工具、RAG。每条都给「你会看到 → 因为 → 改成」，
+          并尽量标出源码位置。
+        </p>
+
+        <h2 id="build">构建与依赖</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. <code>NoSuchMethodError</code> / <code>NoClassDefFoundError</code></div>
+          <dl>
+            <dt>你会看到</dt><dd>启动或第一次调用时抛链接错误，类名是 LangChain4j 的。</dd>
+            <dt>因为</dt><dd>各模块版本不一致，常见于只升级了 core 没升级 provider。</dd>
+            <dt>改成</dt><dd>用 <code>langchain4j-bom</code> 管版本，模块不写版本号。</dd>
+          </dl>
+        </div>
+
+        <h2 id="model">模型与调用</h2>
+        <div class="pitfall">
+          <div class="pf-h">2. 401 Unauthorized</div>
+          <dl>
+            <dt>你会看到</dt><dd>第一次 <code>chat()</code> 就失败，错误体里带 401。</dd>
+            <dt>因为</dt><dd>API Key 为空、过期或环境变量没传进进程。</dd>
+            <dt>改成</dt><dd>打印 <code>System.getenv("DEEPSEEK_API_KEY")</code> 是否为空；不要在代码里硬编码。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 404 / 模型不存在</div>
+          <dl>
+            <dt>你会看到</dt><dd>HTTP 404，或服务端返回 model not found。</dd>
+            <dt>因为</dt><dd><code>baseUrl</code> 少了 <code>/v1</code>，或 <code>modelName</code> 不是服务端认的名字。</dd>
+            <dt>改成</dt><dd>按厂商文档补全 URL；用 <code>ollama list</code> / 控制台确认模型名。</dd>
+          </dl>
+        </div>
+
+        <h2 id="tool">工具与结构化输出</h2>
+        <div class="pitfall">
+          <div class="pf-h">4. 模型不调用工具</div>
+          <dl>
+            <dt>你会看到</dt><dd>回答很正常，但工具一次都没执行。</dd>
+            <dt>因为</dt><dd>工具描述太模糊、参数没有 <code>@P</code>、或模型不支持 function calling。</dd>
+            <dt>改成</dt><dd>把工具描述写成「什么时候用、输入是什么、返回什么」；先用明确指令测试。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">5. 结构化输出解析失败</div>
+          <dl>
+            <dt>你会看到</dt><dd><code>OutputParsingException</code> 或 JSON 反序列化错误。</dd>
+            <dt>因为</dt><dd>模型返回了 markdown 围栏、缺字段或枚举值不在范围内。</dd>
+            <dt>改成</dt><dd>在系统提示里要求「只输出 JSON」；给字段加描述；对失败做有限次重试。</dd>
+          </dl>
+        </div>
+
+        <h2 id="rag">RAG 与向量库</h2>
+        <div class="pitfall">
+          <div class="pf-h">6. 召回为空</div>
+          <dl>
+            <dt>你会看到</dt><dd>模型说「资料中没有」，但文档明明入库了。</dd>
+            <dt>因为</dt><dd>切分太大/太小、embedding 模型不一致、<code>minScore</code> 太高。</dd>
+            <dt>改成</dt><dd>先把 <code>minScore</code> 降到 0，打印召回条数与分数，再调阈值。</dd>
+          </dl>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>查 API 去 <a href="api-cheatsheet.html">附录 C</a>；查模块去 <a href="source-map.html">附录 D</a>。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

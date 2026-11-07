@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ChatModel、AI Service、Embedding、Retriever、Tool、Memory 等核心术语。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="A 术语表：中英对照 + 一句话直觉 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="ChatModel、AI Service、Embedding、Retriever、Tool、Memory 等核心术语。" />
+    <title>A 术语表：中英对照 + 一句话直觉 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="glossary" data-root="..">
+    <main>
+      <article class="article">
+        <h1>A · 术语表：中英对照 + 一句话直觉</h1>
+        <p class="lede">ChatModel、AI Service、Embedding、Retriever、Tool、Memory 等核心术语。</p>
+        <h2 id="core">对话与模型</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>术语</th><th>一句话</th></tr></thead>
+            <tbody>
+              <tr><td><code>ChatModel</code></td><td>同步对话接口，输入消息、输出 <code>ChatResponse</code>。</td></tr>
+              <tr><td><code>StreamingChatModel</code></td><td>流式对话接口，通过回调逐块返回。</td></tr>
+              <tr><td><code>ChatRequest</code></td><td>把消息与参数装在一起的一次请求。</td></tr>
+              <tr><td><code>ChatResponse</code></td><td>模型响应，含 AI 消息、token 用量与元数据。</td></tr>
+              <tr><td><code>AI Service</code></td><td>用 Java 接口描述 AI 能力，由框架动态实现。</td></tr>
+              <tr><td><code>ChatMemory</code></td><td>决定本轮带哪些历史消息；持久化交给 <code>ChatMemoryStore</code>。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="rag">RAG 与检索</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>术语</th><th>一句话</th></tr></thead>
+            <tbody>
+              <tr><td><code>Document</code></td><td>加载后的原文与 metadata。</td></tr>
+              <tr><td><code>TextSegment</code></td><td>切分后的文本块，带 metadata 与向量。</td></tr>
+              <tr><td><code>Embedding</code></td><td>文本的向量表示。</td></tr>
+              <tr><td><code>EmbeddingStore</code></td><td>保存向量并支持相似度检索。</td></tr>
+              <tr><td><code>ContentRetriever</code></td><td>给一个问题，返回若干相关内容。</td></tr>
+              <tr><td><code>RetrievalAugmentor</code></td><td>把召回内容拼进提示词的组件。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="agent">工具与 Agent</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>术语</th><th>一句话</th></tr></thead>
+            <tbody>
+              <tr><td><code>@Tool</code></td><td>把 Java 方法暴露给模型调用。</td></tr>
+              <tr><td><code>InvocationContext</code></td><td>本次调用的上下文，工具可读取用户/会话信息。</td></tr>
+              <tr><td><code>ToolExecutionResult</code></td><td>工具结果，可标记成功或失败。</td></tr>
+              <tr><td><code>MCP</code></td><td>Model Context Protocol，用标准协议暴露工具与资源。</td></tr>
+              <tr><td>Agent</td><td>带工具循环、记忆与规划能力的模型应用。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>遇到具体报错时看 <a href="errors.html">附录 B</a>；查 API 看 <a href="api-cheatsheet.html">附录 C</a>。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

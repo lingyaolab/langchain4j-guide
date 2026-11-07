@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ChatModel、AI Services、Memory、RAG、Tool 的常用方法与默认值。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="C API 速查：按能力分组 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="ChatModel、AI Services、Memory、RAG、Tool 的常用方法与默认值。" />
+    <title>C API 速查：按能力分组 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="api-cheatsheet" data-root="..">
+    <main>
+      <article class="article">
+        <h1>C · API 速查：按能力分组</h1>
+        <p class="lede">ChatModel、AI Services、Memory、RAG、Tool 的常用方法与默认值。</p>
+        <h2 id="chat">ChatModel 与请求</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>API</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><code>ChatModel.chat(String)</code></td><td>最短路径</td></tr>
+              <tr><td><code>ChatModel.chat(ChatRequest)</code></td><td>显式消息与参数</td></tr>
+              <tr><td><code>ChatResponse.aiMessage()</code></td><td>取 AI 消息</td></tr>
+              <tr><td><code>ChatResponse.tokenUsage()</code></td><td>取 token 用量，可能为 null</td></tr>
+              <tr><td><code>OpenAiChatModel.builder()</code></td><td>OpenAI 兼容端点</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>
+          <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:233">OpenAiChatModel.java:233</span>
+        </p>
+
+        <h2 id="ai-services">AI Services</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>API</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><code>AiServices.create(Class, ChatModel)</code></td><td>最快创建</td></tr>
+              <tr><td><code>AiServices.builder(Class)</code></td><td>加记忆、工具、RAG</td></tr>
+              <tr><td><code>@SystemMessage</code> / <code>@UserMessage</code></td><td>提示词模板</td></tr>
+              <tr><td><code>@V</code></td><td>参数绑定到模板变量</td></tr>
+              <tr><td><code>TokenStream</code></td><td>流式返回</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="memory">Memory</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>API</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><code>MessageWindowChatMemory.withMaxMessages(n)</code></td><td>固定窗口</td></tr>
+              <tr><td><code>ChatMemoryStore</code></td><td>自定义持久化</td></tr>
+              <tr><td><code>@MemoryId</code></td><td>多用户会话键</td></tr>
+              <tr><td><code>chatMemoryProvider(...)</code></td><td>按 id 创建记忆</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="rag">RAG</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>API</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><code>FileSystemDocumentLoader.loadDocument(...)</code></td><td>加载文件</td></tr>
+              <tr><td><code>DocumentSplitters.recursive(...)</code></td><td>递归切分</td></tr>
+              <tr><td><code>EmbeddingStoreIngestor.builder()</code></td><td>切分 + 向量化 + 入库</td></tr>
+              <tr><td><code>EmbeddingStoreContentRetriever.builder()</code></td><td>向量检索</td></tr>
+              <tr><td><code>.contentRetriever(...)</code></td><td>接进 AI Service</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="tools">Tool Calling</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>API</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><code>@Tool("描述")</code></td><td>暴露工具</td></tr>
+              <tr><td><code>@P("参数含义")</code></td><td>描述参数</td></tr>
+              <tr><td><code>InvocationContext</code></td><td>读取调用上下文</td></tr>
+              <tr><td><code>ToolExecutionResult</code></td><td>控制成功/失败</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>看模块分工去 <a href="source-map.html">附录 D</a>；看迁移去 <a href="migration.html">附录 E</a>。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

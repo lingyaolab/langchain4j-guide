@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。" />
+    <title>02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="02-chatmodel" data-root="..">
+    <main>
+      <article class="article">
+        <h1>02 · ChatModel：同步、流式与请求对象</h1>
+        <p class="lede">ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatOptions、多模型与 OpenAI 兼容端点。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>区分 <code>ChatModel</code> 与 <code>StreamingChatModel</code></li>
+          <li>用 <code>ChatRequest</code> 显式传消息与参数</li>
+          <li>从 <code>ChatResponse</code> 取文本、token 用量与工具调用</li>
+          <li>知道什么时候该用流式</li>
+        </ul>
+
+        <h2 id="why">先说为什么：ChatModel 与 StreamingChatModel 是两条接口</h2>
+        <p>
+          同步接口返回一个完整的 <code>ChatResponse</code>；流式接口通过回调逐块吐出
+          <code>StreamingChatResponseHandler</code> 事件。两者不是继承关系，很多 provider 会同时实现。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/StreamingChatModel.java:41">StreamingChatModel.java:41</span>
+        </p>
+
+        <h2 id="minimal">最小可跑：chat 与 chatRequest</h2>
+        <pre data-lang="java" data-file="两种调用">// 1) 最省事：字符串进，字符串出
+String text = model.chat("用三句话解释向量检索");
+
+// 2) 显式请求：消息 + 参数
+ChatRequest request = ChatRequest.builder()
+        .messages(SystemMessage.from("你是简洁的中文技术编辑"),
+                  UserMessage.from("解释 RAG，并给一个 Java 例子"))
+        .parameters(ChatRequestParameters.builder()
+                .temperature(0.2)
+                .maxOutputTokens(800)
+                .build())
+        .build();
+
+ChatResponse response = model.chat(request);
+System.out.println(response.aiMessage().text());
+System.out.println(response.tokenUsage());</pre>
+        <p class="src-line">
+          请求对象 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/request/ChatRequest.java:15">ChatRequest.java:15</span>；
+          响应对象 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/response/ChatResponse.java:11">ChatResponse.java:11</span>。
+        </p>
+
+        <h2 id="line-by-line">逐行解读：消息、参数与返回值</h2>
+        <ul>
+          <li><code>SystemMessage</code> 是行为约束，<code>UserMessage</code> 是本轮输入。</li>
+          <li><code>ChatRequestParameters</code> 是接口，<code>DefaultChatRequestParameters</code> 是通用实现。</li>
+          <li><code>aiMessage().text()</code> 只取文本；如果模型返回工具调用，文本可能为空。</li>
+          <li><code>tokenUsage()</code> 可能为 null，取决于 provider 是否返回用量。</li>
+        </ul>
+
+        <h2 id="sync-vs-stream">同步与流式：什么时候用哪个</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>场景</th><th>用哪个</th><th>原因</th></tr></thead>
+            <tbody>
+              <tr><td>批处理、后台任务</td><td>同步</td><td>代码简单，错误直接抛</td></tr>
+              <tr><td>聊天 UI、SSE</td><td>流式</td><td>首字延迟低，可提前取消</td></tr>
+              <tr><td>需要工具循环</td><td>AI Service</td><td>框架替你处理多轮工具往返</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="request">ChatRequest：把消息与参数装进一个对象</h2>
+        <p>
+          <code>ChatRequest</code> 是 builder 模式：<code>messages(...)</code> 可以传列表或可变参数，
+          <code>parameters(...)</code> 接收 <code>ChatRequestParameters</code>。
+          这样同一份参数可以复用到多次调用。
+        </p>
+        <pre data-lang="java" data-file="复用参数">ChatRequestParameters params = ChatRequestParameters.builder()
+        .temperature(0.0)
+        .topP(0.9)
+        .maxOutputTokens(400)
+        .build();
+
+ChatResponse a = model.chat(ChatRequest.builder()
+        .messages(UserMessage.from("列出三条 RAG 优点"))
+        .parameters(params)
+        .build());</pre>
+
+        <h2 id="options">ChatOptions：温度、topP、maxTokens</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>参数</th><th>作用</th><th>常见取值</th></tr></thead>
+            <tbody>
+              <tr><td><code>temperature</code></td><td>随机性</td><td>抽取 0–0.3；创意 0.7–1.0</td></tr>
+              <tr><td><code>topP</code></td><td> nucleus 采样</td><td>一般 0.9–1.0</td></tr>
+              <tr><td><code>maxOutputTokens</code></td><td>回答上限</td><td>按成本与长度设</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="providers">多模型与 OpenAI 兼容端点</h2>
+        <p>
+          只要协议兼容，就可以用同一个 <code>OpenAiChatModel</code> 接不同厂商；差异主要在
+          <code>baseUrl</code>、<code>modelName</code> 和部分扩展参数。多模型场景建议把
+          <code>ChatModel</code> 作为构造器参数注入，而不是在业务代码里 new。
+        </p>
+
+        <h2 id="cheatsheet">API 速查</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>方法</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>model.chat(String)</code></td><td>最短路径</td></tr>
+              <tr><td><code>model.chat(ChatMessage...)</code></td><td>多消息</td></tr>
+              <tr><td><code>model.chat(ChatRequest)</code></td><td>带参数</td></tr>
+              <tr><td><code>response.aiMessage().text()</code></td><td>取文本</td></tr>
+              <tr><td><code>response.tokenUsage()</code></td><td>取用量</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">把 <code>ChatModel</code> 当线程安全单例随便共享</span>
+          <p>多数实现是无状态的，但要确认 provider 文档；有状态实现应按请求创建或加锁。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">流式接口也返回 <code>ChatResponse</code></span>
+          <p>它通过回调聚合最终响应；不要以为流式只有字符串。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="03-prompt.html">03 Prompt 与消息</a>，把提示词从字符串升级成消息列表。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>

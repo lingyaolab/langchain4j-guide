@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="langchain4j-core / langchain4j / 各 provider 模块的分工与阅读顺序。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="D 源码地图：模块、包与职责 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="langchain4j-core / langchain4j / 各 provider 模块的分工与阅读顺序。" />
+    <title>D 源码地图：模块、包与职责 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="source-map" data-root="..">
+    <main>
+      <article class="article">
+        <h1>D · 源码地图：模块、包与职责</h1>
+        <p class="lede">langchain4j-core / langchain4j / 各 provider 模块的分工与阅读顺序。</p>
+        <h2 id="modules">模块总览</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>模块</th><th>职责</th></tr></thead>
+            <tbody>
+              <tr><td><code>langchain4j-core</code></td><td>契约与数据模型：ChatModel、消息、Embedding、Document、RAG 接口</td></tr>
+              <tr><td><code>langchain4j</code></td><td>AI Services、Memory 默认实现、RAG 默认实现、切分器</td></tr>
+              <tr><td><code>langchain4j-open-ai</code></td><td>OpenAI 兼容的 chat / embedding / image 模型</td></tr>
+              <tr><td><code>langchain4j-ollama</code></td><td>本地 Ollama 模型</td></tr>
+              <tr><td><code>langchain4j-pgvector</code></td><td>pgvector 向量库</td></tr>
+              <tr><td><code>langchain4j-mcp</code></td><td>MCP 客户端与服务端</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="core">langchain4j-core：契约与默认实现</h2>
+        <p>
+          先读 <code>dev.langchain4j.model.chat</code> 与 <code>dev.langchain4j.data.message</code>：
+          它们定义一次调用最基本的输入输出。再看 <code>dev.langchain4j.store.embedding</code> 与
+          <code>dev.langchain4j.rag</code>，理解 RAG 的接口边界。
+        </p>
+
+        <h2 id="rag">RAG 相关模块</h2>
+        <p>
+          <code>langchain4j-core</code> 放 <code>DocumentLoader</code>、<code>DocumentSplitter</code>、
+          <code>EmbeddingStore</code>、<code>ContentRetriever</code>；<code>langchain4j</code> 放
+          <code>FileSystemDocumentLoader</code>、<code>DocumentSplitters</code>、<code>EmbeddingStoreIngestor</code>。
+        </p>
+
+        <h2 id="extension">provider 与扩展模块</h2>
+        <p>
+          每个 provider 一个模块，通常只实现 core 的接口；向量库、文档解析器、协议也按模块拆。
+          读源码时先看模块的 <code>pom.xml</code> 依赖，再看入口类的 builder。
+        </p>
+
+        <h2 id="next">下一步</h2>
+        <p>回到 <a href="../chapters/08-rag-basics.html">08 RAG 基础</a> 按流水线读代码。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>
