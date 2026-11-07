@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。" />
+    <meta
+      name="description"
+      content="从最短的一次 chat 开始，逐步理解 ChatModel、ChatRequest、ChatResponse、流式回调与多轮消息。面向第一次使用 LangChain4j 的 Java 开发者。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。" />
-    <title>02 ChatModel：同步、流式与请求对象 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="02 ChatModel：一次调用从请求到响应 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="从最短的一次 chat 开始，逐步理解请求、响应、流式与多轮消息。" />
+    <title>02 ChatModel：一次调用从请求到响应 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,130 +27,267 @@
   <body data-page="02-chatmodel" data-root="..">
     <main>
       <article class="article">
-        <h1>02 · ChatModel：同步、流式与请求对象</h1>
-        <p class="lede">ChatModel 与 StreamingChatModel、ChatRequest、ChatResponse、ChatRequestParameters、多模型与 OpenAI 兼容端点。</p>
-        <h2 id="goals">读完你能做到</h2>
+        <h1>02 · ChatModel：一次调用从请求到响应</h1>
+        <p class="lede">
+          上一章我们只用了 <code>model.chat("一句话")</code>。这一章把这次调用拆开：
+          消息怎么放、参数怎么传、响应里有什么、流式为什么是另一条接口。
+          学完你会写一个能连续对话的命令行小助手。
+        </p>
+
+        <h2 id="goals">学完这一章，你能做什么</h2>
         <ul class="goals">
-          <li>区分 <code>ChatModel</code> 与 <code>StreamingChatModel</code></li>
-          <li>用 <code>ChatRequest</code> 显式传消息与参数</li>
-          <li>从 <code>ChatResponse</code> 取文本、token 用量与工具调用</li>
-          <li>知道什么时候该用流式</li>
+          <li>用 <code>ChatRequest</code> 显式组织 system / user 消息</li>
+          <li>从 <code>ChatResponse</code> 取文本与 token 用量</li>
+          <li>把同步回答改成流式，并理解回调的执行顺序</li>
+          <li>写出一个支持多轮输入的命令行助手</li>
         </ul>
 
-        <h2 id="why">先说为什么：ChatModel 与 StreamingChatModel 是两条接口</h2>
+        <h2 id="why">先理解：一次模型调用到底发生了什么</h2>
         <p>
-          同步接口返回一个完整的 <code>ChatResponse</code>；流式接口通过回调逐块吐出
-          <code>StreamingChatResponseHandler</code> 事件。两者不是继承关系，很多 provider 会同时实现。
+          先把模型当成一个黑盒函数：
         </p>
+        <pre data-lang="text" data-file="心智模型">输入：消息列表 + 参数
+  ↓
+模型
+  ↓
+输出：一条 AI 消息 + 用量信息</pre>
+        <p>
+          在 LangChain4j 里，这三段分别对应：
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>类型</th><th>你可以控制什么</th></tr></thead>
+            <tbody>
+              <tr><td>请求</td><td><code>ChatRequest</code></td><td>消息、温度、最大输出 token</td></tr>
+              <tr><td>调用</td><td><code>ChatModel</code></td><td>同步或流式、用哪个 provider</td></tr>
+              <tr><td>响应</td><td><code>ChatResponse</code></td><td>文本、token 用量、工具调用</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>
-          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/StreamingChatModel.java:41">StreamingChatModel.java:41</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/request/ChatRequest.java:15">ChatRequest.java:15</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/response/ChatResponse.java:11">ChatResponse.java:11</span>
         </p>
 
-        <h2 id="minimal">最小可跑：chat 与 chatRequest</h2>
-        <pre data-lang="java" data-file="两种调用">// 1) 最省事：字符串进，字符串出
-String text = model.chat("用三句话解释向量检索");
+        <h2 id="minimal">第一步：用最短代码拿到回答</h2>
+        <p>
+          沿用上一章的工程，先跑最短路径：
+        </p>
+        <pre data-lang="java" data-file="最短调用">ChatModel model = OpenAiChatModel.builder()
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
+        .build();
 
-// 2) 显式请求：消息 + 参数
-ChatRequest request = ChatRequest.builder()
-        .messages(SystemMessage.from("你是简洁的中文技术编辑"),
-                  UserMessage.from("解释 RAG，并给一个 Java 例子"))
-        .parameters(ChatRequestParameters.builder()
-                .temperature(0.2)
-                .maxOutputTokens(800)
-                .build())
+String answer = model.chat("用三句话解释向量检索");
+System.out.println(answer);</pre>
+        <p>
+          <code>chat(String)</code> 是一个便利方法：它把字符串包成一条 user 消息，
+          再走完整的请求流程。适合验证环境，但不适合多轮或需要 system 提示的场景。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:186">ChatModel.java:186</span>
+        </p>
+
+        <h2 id="line-by-line">第二步：把这次调用拆成消息与参数</h2>
+        <p>
+          现在不用快捷方法，显式构造请求。你会第一次看到 system 与 user 两种消息：
+        </p>
+        <pre data-lang="java" data-file="显式请求">ChatRequest request = ChatRequest.builder()
+        .messages(
+                SystemMessage.from("你是简洁的中文技术编辑，只回答 Java 问题"),
+                UserMessage.from("解释 RAG，并给一个 Java 例子"))
         .build();
 
 ChatResponse response = model.chat(request);
+
 System.out.println(response.aiMessage().text());
-System.out.println(response.tokenUsage());</pre>
-        <p class="src-line">
-          请求对象 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/request/ChatRequest.java:15">ChatRequest.java:15</span>；
-          响应对象 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/response/ChatResponse.java:11">ChatResponse.java:11</span>。
+System.out.println("输入 token：" + response.tokenUsage().inputTokenCount());
+System.out.println("输出 token：" + response.tokenUsage().outputTokenCount());</pre>
+        <p>
+          逐段看：
         </p>
-
-        <h2 id="line-by-line">逐行解读：消息、参数与返回值</h2>
-        <ul>
-          <li><code>SystemMessage</code> 是行为约束，<code>UserMessage</code> 是本轮输入。</li>
-          <li><code>ChatRequestParameters</code> 是接口，<code>DefaultChatRequestParameters</code> 是通用实现。</li>
-          <li><code>aiMessage().text()</code> 只取文本；如果模型返回工具调用，文本可能为空。</li>
-          <li><code>tokenUsage()</code> 可能为 null，取决于 provider 是否返回用量。</li>
-        </ul>
-
-        <h2 id="sync-vs-stream">同步与流式：什么时候用哪个</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>场景</th><th>用哪个</th><th>原因</th></tr></thead>
-            <tbody>
-              <tr><td>批处理、后台任务</td><td>同步</td><td>代码简单，错误直接抛</td></tr>
-              <tr><td>聊天 UI、SSE</td><td>流式</td><td>首字延迟低，可提前取消</td></tr>
-              <tr><td>需要工具循环</td><td>AI Service</td><td>框架替你处理多轮工具往返</td></tr>
-            </tbody>
-          </table>
+        <ol class="steps">
+          <li><span class="sh">SystemMessage</span><div>告诉模型「你是谁、怎么回答」。它不是用户问题，但会影响整段对话。</div></li>
+          <li><span class="sh">UserMessage</span><div>本轮真正的问题。后面多轮对话会有多条 user / AI 消息。</div></li>
+          <li><span class="sh">ChatRequest</span><div>把消息和参数装在一起；现在只有消息，参数用默认值。</div></li>
+          <li><span class="sh">ChatResponse</span><div>先取 <code>aiMessage()</code>，再取 <code>text()</code>；<code>tokenUsage()</code> 可能为 null。</div></li>
+        </ol>
+        <div class="callout warn">
+          <span class="ct">aiMessage().text() 可能为空</span>
+          <p>
+            如果模型返回的是工具调用，文本可能为空，内容在 <code>aiMessage().toolExecutionRequests()</code>。
+            工具章节会展开；现在只需要知道「空回答不一定是 bug」。
+          </p>
         </div>
 
-        <h2 id="request">ChatRequest：把消息与参数装进一个对象</h2>
+        <h2 id="sync-vs-stream">第三步：把回答改成流式</h2>
         <p>
-          <code>ChatRequest</code> 是 builder 模式：<code>messages(...)</code> 可以传列表或可变参数，
-          <code>parameters(...)</code> 接收 <code>ChatRequestParameters</code>。
-          这样同一份参数可以复用到多次调用。
+          同步调用要等整段回答生成完才返回。流式则在每个 token 到达时回调，
+          更适合聊天 UI。它需要另一个接口：<code>StreamingChatModel</code>。
         </p>
-        <pre data-lang="java" data-file="复用参数">ChatRequestParameters params = ChatRequestParameters.builder()
-        .temperature(0.0)
-        .topP(0.9)
-        .maxOutputTokens(400)
+        <pre data-lang="java" data-file="流式调用">StreamingChatModel streamingModel = OpenAiStreamingChatModel.builder()
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
         .build();
 
-ChatResponse a = model.chat(ChatRequest.builder()
-        .messages(UserMessage.from("列出三条 RAG 优点"))
-        .parameters(params)
-        .build());</pre>
+ChatRequest request = ChatRequest.builder()
+        .messages(UserMessage.from("用 100 字介绍 LangChain4j"))
+        .build();
 
-        <h2 id="options">ChatRequestParameters：温度、topP、maxOutputTokens</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>参数</th><th>作用</th><th>常见取值</th></tr></thead>
-            <tbody>
-              <tr><td><code>temperature</code></td><td>随机性</td><td>抽取 0–0.3；创意 0.7–1.0</td></tr>
-              <tr><td><code>topP</code></td><td> nucleus 采样</td><td>一般 0.9–1.0</td></tr>
-              <tr><td><code>maxOutputTokens</code></td><td>回答上限</td><td>按成本与长度设</td></tr>
-            </tbody>
-          </table>
-        </div>
+streamingModel.chat(request, new StreamingChatResponseHandler() {
+    @Override
+    public void onPartialResponse(String token) {
+        System.out.print(token);
+    }
 
-        <h2 id="providers">多模型与 OpenAI 兼容端点</h2>
+    @Override
+    public void onCompleteResponse(ChatResponse response) {
+        System.out.println("\n完成，用量：" + response.tokenUsage());
+    }
+
+    @Override
+    public void onError(Throwable error) {
+        error.printStackTrace();
+    }
+});</pre>
         <p>
-          只要协议兼容，就可以用同一个 <code>OpenAiChatModel</code> 接不同厂商；差异主要在
-          <code>baseUrl</code>、<code>modelName</code> 和部分扩展参数。多模型场景建议把
-          <code>ChatModel</code> 作为构造器参数注入，而不是在业务代码里 new。
+          回调顺序是：多次 <code>onPartialResponse</code> → 一次 <code>onCompleteResponse</code>；
+          出错则走 <code>onError</code>。注意普通 <code>onPartialResponse</code> 不提供取消句柄，
+          需要取消时用带 context 的重载。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/StreamingChatModel.java:41">StreamingChatModel.java:41</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/StreamingChatModel.java:49">StreamingChatModel.java:49</span>
         </p>
 
-        <h2 id="cheatsheet">API 速查</h2>
+        <h2 id="request">第四步：用 ChatRequest 组织多轮对话</h2>
+        <p>
+          模型本身不记得上一轮。多轮对话的本质是：<strong>你每次把历史消息一起发过去</strong>。
+        </p>
+        <pre data-lang="java" data-file="手动多轮">List&lt;ChatMessage&gt; history = new ArrayList&lt;&gt;();
+history.add(SystemMessage.from("你是 Java 助教，回答控制在 100 字内"));
+
+while (true) {
+    System.out.print("你：");
+    String input = scanner.nextLine();
+    if ("exit".equalsIgnoreCase(input)) break;
+
+    history.add(UserMessage.from(input));
+    ChatResponse response = model.chat(ChatRequest.builder()
+            .messages(history)
+            .build());
+
+    String answer = response.aiMessage().text();
+    System.out.println("AI：" + answer);
+    history.add(AiMessage.from(answer));
+}</pre>
+        <p>
+          这段代码就是「记忆」的雏形。后面第 07 章会用 <code>ChatMemory</code> 替你管理这个列表，
+          但原理仍然是：把历史消息带进下一次请求。
+        </p>
+
+        <h2 id="options">第五步：控制温度与回答长度</h2>
+        <p>
+          参数通过 <code>ChatRequestParameters</code> 传入。先只学三个最常用的：
+        </p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>方法</th><th>用途</th></tr></thead>
+            <thead><tr><th>参数</th><th>作用</th><th>建议</th></tr></thead>
             <tbody>
-              <tr><td><code>model.chat(String)</code></td><td>最短路径</td></tr>
-              <tr><td><code>model.chat(ChatMessage...)</code></td><td>多消息</td></tr>
-              <tr><td><code>model.chat(ChatRequest)</code></td><td>带参数</td></tr>
-              <tr><td><code>response.aiMessage().text()</code></td><td>取文本</td></tr>
-              <tr><td><code>response.tokenUsage()</code></td><td>取用量</td></tr>
+              <tr><td><code>temperature</code></td><td>随机性</td><td>抽取/代码 0–0.3；创意 0.7–1.0</td></tr>
+              <tr><td><code>topP</code></td><td>采样范围</td><td>一般 0.9–1.0</td></tr>
+              <tr><td><code>maxOutputTokens</code></td><td>回答上限</td><td>按成本和长度设置</td></tr>
             </tbody>
           </table>
         </div>
+        <pre data-lang="java" data-file="带参数">ChatRequest request = ChatRequest.builder()
+        .messages(UserMessage.from("列出三条 RAG 的优点"))
+        .parameters(ChatRequestParameters.builder()
+                .temperature(0.2)
+                .maxOutputTokens(300)
+                .build())
+        .build();</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/request/ChatRequestParameters.java:13">ChatRequestParameters.java:13</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/request/ChatRequestParameters.java:27">ChatRequestParameters.java:27</span>
+        </p>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">把 <code>ChatModel</code> 当线程安全单例随便共享</span>
-          <p>多数实现是无状态的，但要确认 provider 文档；有状态实现应按请求创建或加锁。</p>
+        <h2 id="providers">第六步：换模型，业务代码不动</h2>
+        <p>
+          把 DeepSeek 换成 Ollama，只改构造模型这一段；<code>ChatRequest</code>、
+          <code>ChatResponse</code> 和循环逻辑都不变。
+        </p>
+        <pre data-lang="java" data-file="换 Ollama">ChatModel model = OllamaChatModel.builder()
+        .baseUrl("http://localhost:11434")
+        .modelName("qwen3:8b")
+        .build();
+
+String answer = model.chat("你好，介绍一下你自己");</pre>
+        <p>
+          这就是为什么上一章强调「依赖 <code>ChatModel</code> 接口」。
+          如果你的业务代码里到处是 <code>OpenAiChatModel</code>，换模型就会变成全量修改。
+        </p>
+
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 回答是空字符串</div>
+          <dl>
+            <dt>你会看到</dt><dd><code>aiMessage().text()</code> 为空，但请求成功。</dd>
+            <dt>因为</dt><dd>模型返回了工具调用，文本部分为空；或者模型只返回了 reasoning 内容。</dd>
+            <dt>改成</dt><dd>先检查 <code>toolExecutionRequests()</code>；没有工具调用再看 provider 是否把内容放在别的字段。</dd>
+          </dl>
         </div>
-        <div class="callout warn">
-          <span class="ct">流式接口也返回 <code>ChatResponse</code></span>
-          <p>它通过回调聚合最终响应；不要以为流式只有字符串。</p>
+        <div class="pitfall">
+          <div class="pf-h">2. tokenUsage() 为 null</div>
+          <dl>
+            <dt>你会看到</dt><dd>打印用量时 NPE。</dd>
+            <dt>因为</dt><dd>不是所有 provider / 模型都会返回用量。</dd>
+            <dt>改成</dt><dd>判空后再用，或用 <code>Optional.ofNullable(...)</code> 包一层。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 流式没有输出</div>
+          <dl>
+            <dt>你会看到</dt><dd>程序结束了，但什么都没打印。</dd>
+            <dt>因为</dt><dd>用了 <code>ChatModel</code> 而不是 <code>StreamingChatModel</code>，或回调没实现。</dd>
+            <dt>改成</dt><dd>确认类型是 <code>StreamingChatModel</code>，并至少实现 <code>onPartialResponse</code> 与 <code>onError</code>。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 多轮对话「失忆」</div>
+          <dl>
+            <dt>你会看到</dt><dd>第二轮问「我刚才说了什么」，模型不知道。</dd>
+            <dt>因为</dt><dd>每次只发了当前这一条 user 消息。</dd>
+            <dt>改成</dt><dd>把之前的 user / AI 消息一起放进 <code>messages</code>，或使用第 07 章的 <code>ChatMemory</code>。</dd>
+          </dl>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="03-prompt.html">03 Prompt 与消息</a>，把提示词从字符串升级成消息列表。</p>
+        <h2 id="pitfalls">动手练习：多轮命令行助手</h2>
+        <p>把本章代码合成一个小程序，要求：</p>
+        <ol>
+          <li>启动时设置一条 system 消息：「你是 Java 助教，回答不超过 100 字」。</li>
+          <li>循环读取用户输入，输入 <code>exit</code> 退出。</li>
+          <li>每轮把历史消息一起发给模型，并把 AI 回答追加进历史。</li>
+          <li>给请求设置 <code>temperature(0.3)</code> 与 <code>maxOutputTokens(200)</code>。</li>
+          <li>进阶：把同步调用改成流式，观察首字延迟。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能不看示例写出这个循环，并解释「为什么第二轮模型能记得第一轮」，
+            这一章就过关了。下一章我们会把提示词从手拼消息升级成模板。
+          </p>
+        </div>
+
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在掌握了三件事：请求对象、响应对象、同步与流式两条接口。
+          下一章 <a href="03-prompt.html">03 Prompt 与消息</a> 会把「提示词」当成可维护的模板，
+          而不是散落在代码里的字符串。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
