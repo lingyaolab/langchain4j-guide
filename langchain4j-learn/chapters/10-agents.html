@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="声明式 @Agent、AgenticScope、顺序 / 并行 / 循环 / 条件工作流、Supervisor 与生产化边界。" />
+    <meta
+      name="description"
+      content="从单个 AI Service 不够用开始，学会用 @Agent 声明 Agent，用 AgenticScope 传结果，并用顺序、并行、循环、条件工作流编排多个 Agent。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="10 Agent 与工作流：从工具循环到多 Agent · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="声明式 @Agent、AgenticScope、顺序 / 并行 / 循环 / 条件工作流、Supervisor 与生产化边界。" />
-    <title>10 Agent 与工作流：从工具循环到多 Agent · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="10 Agent 与工作流：从单 Agent 到协作 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="声明式 Agent、AgenticScope 与四种工作流。" />
+    <title>10 Agent 与工作流：从单 Agent 到协作 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,33 +27,47 @@
   <body data-page="10-agents" data-root="..">
     <main>
       <article class="article">
-        <h1>10 · Agent 与工作流：从工具循环到多 Agent</h1>
-        <p class="lede">声明式 @Agent、AgenticScope、顺序 / 并行 / 循环 / 条件工作流、Supervisor 与生产化边界。</p>
-        <h2 id="goals">读完你能做到</h2>
+        <h1>10 · Agent 与工作流：从单 Agent 到协作</h1>
+        <p class="lede">
+          一个 AI Service 能完成一次任务。真实业务里经常需要「先写、再审、再改」，
+          或者「同时做事实核查和风格检查」。这一章从单个 Agent 开始，逐步学会用
+          AgenticScope 传结果，再串行、并行、循环、条件分支，最后判断什么时候才需要 Supervisor。
+        </p>
+
+        <h2 id="goals">学完这一章，你能做什么</h2>
         <ul class="goals">
-          <li>用 <code>@Agent</code> 把 AI Service 声明成可编排的 Agent</li>
-          <li>用 <code>AgenticScope</code> 与 <code>outputKey</code> 在 Agent 之间传值</li>
-          <li>写出顺序、并行、循环与条件四种工作流</li>
-          <li>知道什么时候该上 Supervisor / Planner，什么时候不该</li>
+          <li>用 <code>@Agent</code> 把一个 AI Service 声明成可编排的 Agent</li>
+          <li>用 <code>AgenticScope</code> 与 <code>outputKey</code> 在 Agent 之间传结果</li>
+          <li>写出顺序、并行、循环、条件四种工作流</li>
+          <li>知道什么时候该上 Supervisor，什么时候不该</li>
         </ul>
 
-        <h2 id="why">先说为什么：Agent 不是更复杂的 AI Service</h2>
+        <h2 id="why">先理解：一个 Agent 不够用时</h2>
         <p>
-          AI Service 解决「一次调用 + 工具循环」；Agentic 解决「多个 Agent 怎么协作」。
-          它不替代 AI Service，而是在上面加一层共享状态（<code>AgenticScope</code>）与编排器
-          （sequence / parallel / loop / conditional / supervisor）。
+          一个 Agent 适合「一次模型调用 + 工具循环」。当任务需要多个角色协作时，会遇到新问题：
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>需求</th><th>单 Agent 的问题</th><th>工作流</th></tr></thead>
+            <tbody>
+              <tr><td>先写初稿，再润色</td><td>一个 prompt 里塞两个角色，容易互相干扰</td><td>顺序</td></tr>
+              <tr><td>事实核查 + 风格检查</td><td>串行跑两次，慢</td><td>并行</td></tr>
+              <tr><td>写到满意为止</td><td>一次生成可能不达标</td><td>循环</td></tr>
+              <tr><td>法律问题走法律专家，技术问题走技术专家</td><td>一个 Agent 很难同时专精</td><td>条件分支</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Agentic 不替代 AI Service，而是在上面加一层共享状态（<code>AgenticScope</code>）与编排器。
         </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:146">AgenticServices.java:146</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:177">AgenticServices.java:177</span>
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:194">AgenticServices.java:194</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/scope/AgenticScope.java:20">AgenticScope.java:20</span>
         </p>
 
-        <h2 id="declarative">声明式 Agent：@Agent 与 agentBuilder</h2>
+        <h2 id="declarative">第一步：把一个 AI Service 变成 Agent</h2>
         <p>
-          方法上的 <code>@Agent</code> 表示它可以被其他 Agent 调用；<code>outputKey</code>
-          决定结果写进共享状态的哪个键。单 Agent 仍然用 <code>agentBuilder</code> 创建。
+          给方法加 <code>@Agent</code>，再用 <code>agentBuilder</code> 创建。单 Agent 和上一章的 AI Service 几乎一样：
         </p>
         <pre data-lang="java" data-file="Writer.java">public interface Writer {
     @UserMessage("写一个关于 {{topic}} 的三句话故事")
@@ -61,37 +78,48 @@
 Writer writer = AgenticServices.agentBuilder(Writer.class)
         .chatModel(model)
         .build();</pre>
+        <p>
+          <code>@Agent</code> 的 <code>outputKey</code> 决定结果写进共享状态的哪个键。
+          不设 <code>outputKey</code> 的 Agent 也能被调用，但结果只出现在调用记录里，不会自动按键保存。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/Agent.java:15">Agent.java:15</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/Agent.java:45">Agent.java:45</span>
         </p>
 
-        <h2 id="scope">AgenticScope：用 outputKey 在 Agent 之间传值</h2>
+        <h2 id="scope">第二步：用 AgenticScope 传结果</h2>
         <p>
-          只有设置了 <code>outputKey</code> / <code>typedOutputKey</code> 的 Agent 才会把结果写进
-          <code>AgenticScope</code>；没设置时结果只出现在调用记录里，不会自动按键保存。
-          下游 Agent 用 <code>@V("story")</code> 读取同名变量。需要手工读写时，用
-          <code>readState</code> / <code>writeState</code>。
+          Agent 之间不直接传参，而是通过共享状态。上游写 <code>outputKey</code>，下游用
+          <code>@V("story")</code> 读同名变量：
         </p>
-        <pre data-lang="java" data-file="读取共享状态">UntypedAgent workflow = AgenticServices.sequenceBuilder()
+        <pre data-lang="java" data-file="Editor.java">public interface Editor {
+    @UserMessage("把故事改写成适合 {{audience}} 阅读的版本：{{story}}")
+    @Agent(description = "按受众改写故事", outputKey = "story")
+    String edit(@V("story") String story, @V("audience") String audience);
+}</pre>
+        <p>
+          需要手工读取结果时，用 <code>UntypedAgent</code> 的
+          <code>invokeWithAgenticScope</code>：
+        </p>
+        <pre data-lang="java" data-file="读取共享状态">UntypedAgent flow = AgenticServices.sequenceBuilder()
         .subAgents(writer, editor)
         .outputKey("story")
         .build();
 
-var result = workflow.invokeWithAgenticScope(Map.of("topic", "Java"));
-AgenticScope scope = result.agenticScope();
-String story = (String) scope.readState("story");</pre>
+var result = flow.invokeWithAgenticScope(Map.of(
+        "topic", "一只会写代码的猫",
+        "audience", "小学生"));
+
+String story = (String) result.agenticScope().readState("story");</pre>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/scope/AgenticScope.java:20">AgenticScope.java:20</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/UntypedAgent.java:11">UntypedAgent.java:11</span>
         </p>
 
-        <h2 id="sequence">顺序工作流：sequenceBuilder</h2>
+        <h2 id="sequence">第三步：串起两个 Agent</h2>
         <p>
-          顺序工作流适合「先抽取、再改写、最后汇总」。每个子 Agent 的输出键必须能被下游读到，
-          通常用 <code>outputKey</code> 显式命名，而不是依赖方法返回值顺序。
+          顺序工作流适合「先写、再改」。每个子 Agent 的输出键必须能被下游读到：
         </p>
-        <pre data-lang="java" data-file="故事工作流">public interface StoryWorkflow {
+        <pre data-lang="java" data-file="顺序工作流">public interface StoryWorkflow {
     @Agent
     String run(@V("topic") String topic, @V("audience") String audience);
 }
@@ -102,15 +130,18 @@ StoryWorkflow flow = AgenticServices.sequenceBuilder(StoryWorkflow.class)
         .build();
 
 String story = flow.run("虚拟线程", "小学生");</pre>
+        <p>
+          顺序执行就是按 <code>subAgents</code> 的顺序跑；前一个 Agent 写 <code>story</code>，
+          后一个 Editor 读 <code>story</code>，再覆盖 <code>story</code>。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:187">AgenticServices.java:187</span>
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/planner/AgenticService.java:36">AgenticService.java:36</span>
         </p>
 
-        <h2 id="parallel">并行工作流：parallelBuilder</h2>
+        <h2 id="parallel">第四步：并行做独立检查</h2>
         <p>
-          并行适合互不依赖的检查：事实核查、风格检查、合规检查可以同时跑。每个子 Agent
-          必须写不同的 <code>outputKey</code>，最后由一个汇总 Agent 读取这些键。
+          事实核查和风格检查互不依赖，可以同时跑。每个子 Agent 写不同的
+          <code>outputKey</code>，最后从 scope 里读：
         </p>
         <pre data-lang="java" data-file="并行检查">UntypedAgent checks = AgenticServices.parallelBuilder()
         .subAgents(factChecker, styleChecker)
@@ -119,83 +150,136 @@ String story = flow.run("虚拟线程", "小学生");</pre>
 var result = checks.invokeWithAgenticScope(Map.of("draft", draft));
 String facts = (String) result.agenticScope().readState("facts");
 String style = (String) result.agenticScope().readState("style");</pre>
-        <p>
-          并行默认不会合并结果，也不会自动写一个汇总键；每个子 Agent 各写自己的
-          <code>outputKey</code>，需要汇总时再串一个 Agent。
-        </p>
+        <div class="callout warn">
+          <span class="ct">并行不会自动汇总</span>
+          <p>
+            并行工作流只负责「同时跑」，不会合并结果，也不会自动写一个汇总键。
+            需要汇总时，再串一个 Agent 读取这些键。
+          </p>
+        </div>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:204">AgenticServices.java:204</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:194">AgenticServices.java:194</span>
         </p>
 
-        <h2 id="loop">循环与退出条件：loopBuilder</h2>
+        <h2 id="loop">第五步：让 Agent 迭代改进</h2>
         <p>
-          循环适合「生成 → 评审 → 再生成」的迭代。建议同时设置 <code>maxIterations</code>
-          与 <code>exitCondition</code>：<code>maxIterations</code> 默认是整数上限，只设退出条件才可能无限循环。
+          「写到满意」需要循环。建议同时设置最大轮次和退出条件：
         </p>
-        <pre data-lang="java" data-file="迭代改写">StoryWorkflow flow = AgenticServices.loopBuilder(StoryWorkflow.class)
+        <pre data-lang="java" data-file="循环改写">StoryWorkflow flow = AgenticServices.loopBuilder(StoryWorkflow.class)
         .subAgents(writer, editor)
         .maxIterations(3)
         .exitCondition(scope -&gt; ((String) scope.readState("story")).length() &lt; 500)
         .outputKey("story")
         .build();</pre>
+        <p>
+          <code>maxIterations</code> 默认是整数上限，<code>exitCondition</code> 默认永远为 false。
+          只设退出条件才可能无限循环；只设最大轮次则一定会在轮次耗尽后停止。
+        </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:240">AgenticServices.java:240</span>
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/workflow/LoopAgentService.java:10">LoopAgentService.java:10</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:230">AgenticServices.java:230</span>
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/workflow/impl/LoopAgentServiceImpl.java:24">LoopAgentServiceImpl.java:24</span>
         </p>
 
-        <h2 id="conditional">条件分支：conditionalBuilder</h2>
+        <h2 id="conditional">第六步：按分类走不同分支</h2>
         <p>
-          条件分支按 <code>AgenticScope</code> 里的值选择要跑的子 Agent。条件函数只读状态，
-          不要在里面对模型发请求。
+          先让一个分类 Agent 把问题标成 <code>legal</code> / <code>medical</code>，
+          再用条件工作流选择分支：
         </p>
-        <pre data-lang="java" data-file="按类别分流">TriageWorkflow triage = AgenticServices.conditionalBuilder(TriageWorkflow.class)
+        <pre data-lang="java" data-file="条件分支">TriageWorkflow triage = AgenticServices.conditionalBuilder(TriageWorkflow.class)
         .subAgents(scope -&gt; "legal".equals(scope.readState("category")), legalAgent)
         .subAgents(scope -&gt; "medical".equals(scope.readState("category")), medicalAgent)
         .outputKey("answer")
         .build();</pre>
-        <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:257">AgenticServices.java:257</span>
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/workflow/ConditionalAgentService.java:11">ConditionalAgentService.java:11</span>
-        </p>
-
-        <h2 id="supervisor">Supervisor 与 Planner：什么时候需要</h2>
         <p>
-          <code>supervisorBuilder</code> 让一个「主管」根据任务选择成员；更复杂的规划模式
-          （BDI、Blackboard、Debate、Voting 等）在 <code>langchain4j-agentic-patterns</code> 模块。
-          简单固定流程优先用 sequence / parallel，别一上来就上 Supervisor。
+          条件函数只读 <code>AgenticScope</code>，不要在里面对模型发请求。
         </p>
         <p class="src-line">
-          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:275">AgenticServices.java:275</span>
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:247">AgenticServices.java:247</span>
         </p>
 
-        <h2 id="production">生产化：超时、监听与 HITL</h2>
+        <h2 id="supervisor">第七步：什么时候需要 Supervisor</h2>
+        <p>
+          前面四种工作流都是「你写好结构」。Supervisor 是「让一个主管根据任务动态选成员」：
+        </p>
+        <pre data-lang="java" data-file="Supervisor（概念）">SupervisorAgent supervisor = AgenticServices.supervisorBuilder()
+        .subAgents(legalAgent, medicalAgent, technicalAgent)
+        .build();</pre>
+        <p>
+          它适合成员多、任务类型不确定的场景；固定流程用 sequence / parallel 更可控、更便宜。
+          更复杂的规划模式（BDI、Blackboard、Debate、Voting）在
+          <code>langchain4j-agentic-patterns</code> 模块，先不用急着上。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:265">AgenticServices.java:265</span>
+        </p>
+
+        <h2 id="production">生产化：边界、监听与 HITL</h2>
         <ul>
-          <li>模型与工具超时仍由 <code>ChatModel</code> / 工具执行配置控制，工作流层不替代它们。</li>
-          <li>用 <code>maxIterations</code>、<code>exitCondition</code> 与监听器给循环加边界。</li>
-          <li>需要人工审批时用 <code>humanInTheLoopBuilder()</code>，不要自己在业务代码里轮询。</li>
+          <li>模型/工具超时仍由 <code>ChatModel</code> 与工具执行配置控制，工作流层不替代它们。</li>
+          <li>循环必须设 <code>maxIterations</code>；并行要控制线程池与超时。</li>
           <li>多 Agent 共享 <code>AgenticScope</code>，注意并发写同一个 key 的覆盖问题。</li>
+          <li>需要人工审批时用 <code>humanInTheLoopBuilder()</code>，不要自己轮询。</li>
+          <li>用监听器记录每个 Agent 的输入、输出与耗时，不然出问题很难定位。</li>
         </ul>
         <p class="src-line">
           <span class="src" data-src="langchain4j-agentic/src/main/java/dev/langchain4j/agentic/AgenticServices.java:170">AgenticServices.java:170</span>
         </p>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">所有 Agent 都写同一个 outputKey</span>
-          <p>后执行的会覆盖前面的。并行场景尤其明显，每个 Agent 用独立键，再显式汇总。</p>
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 下游 Agent 拿不到上游结果</div>
+          <dl>
+            <dt>你会看到</dt><dd>模板变量为空，或直接报变量缺失。</dd>
+            <dt>因为</dt><dd>上游没设 <code>outputKey</code>，或下游 <code>@V</code> 名字不一致。</dd>
+            <dt>改成</dt><dd>上下游用同一个键；不确定时先 <code>readState</code> 打印 scope。</dd>
+          </dl>
         </div>
-        <div class="callout warn">
-          <span class="ct">循环只写 exitCondition 不写 maxIterations</span>
-          <p>条件可能永远不满足；两个都设，并把退出原因记录下来。</p>
+        <div class="pitfall">
+          <div class="pf-h">2. 并行结果全是 null</div>
+          <dl>
+            <dt>你会看到</dt><dd>并行跑完，汇总键不存在。</dd>
+            <dt>因为</dt><dd>并行不会自动汇总，也没有 Agent 写这个键。</dd>
+            <dt>改成</dt><dd>每个子 Agent 写自己的 <code>outputKey</code>，再串一个汇总 Agent。</dd>
+          </dl>
         </div>
-        <div class="callout warn">
-          <span class="ct">用 Agentic 包装一次普通 chat</span>
-          <p>单次调用直接用 AI Service 或 <code>ChatModel</code>；编排层会多出状态与调试成本。</p>
+        <div class="pitfall">
+          <div class="pf-h">3. 循环停不下来</div>
+          <dl>
+            <dt>你会看到</dt><dd>请求一直不返回，token 持续消耗。</dd>
+            <dt>因为</dt><dd>只设了 <code>exitCondition</code>，且一直不满足。</dd>
+            <dt>改成</dt><dd>加 <code>maxIterations</code>；退出条件只读 scope，不要发模型请求。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 条件分支两个都跑了</div>
+          <dl>
+            <dt>你会看到</dt><dd>不该执行的分支也执行了。</dd>
+            <dt>因为</dt><dd>两个条件的判断值都为 true。</dd>
+            <dt>改成</dt><dd>条件要互斥；分支多时先做分类 Agent，再按分类值选择。</dd>
+          </dl>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="11-mcp.html">11 MCP</a>，把外部工具接进 Agent 的工具面。</p>
+        <h2 id="pitfalls">动手练习：内容生产工作流</h2>
+        <ol>
+          <li>写两个 Agent：<code>Writer</code> 生成初稿，<code>Editor</code> 按受众改写。</li>
+          <li>用 <code>sequenceBuilder</code> 串起来，输出最终故事。</li>
+          <li>加两个并行检查 Agent：事实核查、风格检查，分别写不同 outputKey。</li>
+          <li>用一个汇总 Agent 读取两个检查结果，决定是否重写。</li>
+          <li>进阶：改成 <code>loopBuilder</code>，最多迭代 3 次，满足字数条件就退出。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能画出「谁写哪个 key、谁读哪个 key」，
+            并解释并行为什么需要额外汇总，这一章就过关了。
+          </p>
+        </div>
+
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在能让多个 Agent 协作。下一章 <a href="11-mcp.html">11 MCP</a>
+          会把工具从「本地 Java 方法」扩展到「外部 MCP Server」。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
