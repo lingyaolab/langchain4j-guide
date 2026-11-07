@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。" />
+    <meta
+      name="description"
+      content="从一份退款政策文档开始，走完 RAG 的加载、切分、向量化、入库、检索与 AI Service 接入。使用本地 embedding，无需额外 API Key。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="08 RAG 基础：加载、切分、Embedding 与检索 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。" />
-    <title>08 RAG 基础：加载、切分、Embedding 与检索 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="08 RAG 基础：让模型回答你的资料 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="从文档加载到检索接入，完整走一遍最小 RAG。" />
+    <title>08 RAG 基础：让模型回答你的资料 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,137 +27,205 @@
   <body data-page="08-rag-basics" data-root="..">
     <main>
       <article class="article">
-        <h1>08 · RAG 基础：加载、切分、Embedding 与检索</h1>
-        <p class="lede">DocumentLoader、DocumentSplitter、EmbeddingModel、EmbeddingStore、EmbeddingStoreIngestor、ContentRetriever。</p>
-        <h2 id="goals">读完你能做到</h2>
-        <ul class="goals">
-          <li>把文件加载成 <code>Document</code> 并切分成 <code>TextSegment</code></li>
-          <li>选一个 embedding 模型并理解维度</li>
-          <li>把向量写进 <code>EmbeddingStore</code></li>
-          <li>用 <code>ContentRetriever</code> 把召回内容拼进 AI Service</li>
-        </ul>
-
-        <h2 id="why">先说为什么：RAG 是 ETL + 检索 + 拼装</h2>
-        <p>
-          它不是一个类，而是一条流水线：加载文档 → 切分 → 向量化 → 入库 → 查询时召回 → 拼进提示词。
-          LangChain4j 把这些步骤拆成可替换的接口，方便你换解析器、切分器、向量库。
+        <h1>08 · RAG 基础：让模型回答你的资料</h1>
+        <p class="lede">
+          模型不知道你的退款政策、内部文档、订单规则。RAG 的做法是：先把资料切成片段、转成向量存起来；
+          用户提问时先检索相关片段，再把这些片段一起交给模型回答。这一章用一份退款文档走完整条链路，
+          embedding 用本地模型，不需要额外 API Key。
         </p>
 
-        <h2 id="pipeline">四段流水线：加载、切分、向量化、入库</h2>
+        <h2 id="goals">学完这一章，你能做什么</h2>
+        <ul class="goals">
+          <li>把一份 Markdown / 文本文件加载成可检索的片段</li>
+          <li>用本地 embedding 模型把文本转成向量</li>
+          <li>把向量存进内存向量库，并完成一次相似度检索</li>
+          <li>把检索接进 AI Service，让回答基于你的资料</li>
+        </ul>
+
+        <h2 id="why">先理解：RAG 解决的是模型不知道你的资料</h2>
+        <p>
+          你直接问模型「退款要几天」，它可能给你一个通用答案，甚至编一个数字。
+          因为你的退款政策不在它的训练数据里。RAG 不重新训练模型，而是在提问时把相关资料递给它：
+        </p>
+        <pre data-lang="text" data-file="RAG 的核心">用户问题 + 检索到的资料片段 → 模型 → 基于资料的回答</pre>
+        <p>
+          它不是「让模型变聪明」，而是「给模型开卷考试」。资料的质量、切分粒度、检索参数，
+          直接决定回答质量。
+        </p>
+
+        <h2 id="pipeline">第一步：把一份文档变成可检索的片段</h2>
+        <p>
+          整条链路分五段，先记住这个顺序：
+        </p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>阶段</th><th>接口 / 类</th><th>你要决定什么</th></tr></thead>
+            <thead><tr><th>阶段</th><th>做什么</th><th>本章用什么</th></tr></thead>
             <tbody>
-              <tr><td>加载</td><td><code>DocumentLoader</code></td><td>PDF / Markdown / 网页用什么解析器</td></tr>
-              <tr><td>切分</td><td><code>DocumentSplitter</code></td><td>按字符、段落还是 token，重叠多少</td></tr>
-              <tr><td>向量化</td><td><code>EmbeddingModel</code></td><td>本地模型还是 API，维度多少</td></tr>
-              <tr><td>存储</td><td><code>EmbeddingStore</code></td><td>内存、pgvector、Milvus 等</td></tr>
+              <tr><td>加载</td><td>文件 → Document</td><td><code>FileSystemDocumentLoader</code></td></tr>
+              <tr><td>切分</td><td>Document → TextSegment</td><td><code>DocumentSplitters.recursive</code></td></tr>
+              <tr><td>向量化</td><td>文本 → Embedding</td><td><code>AllMiniLmL6V2EmbeddingModel</code></td></tr>
+              <tr><td>入库</td><td>向量 + 原文 → EmbeddingStore</td><td><code>InMemoryEmbeddingStore</code></td></tr>
+              <tr><td>检索</td><td>问题 → 相关片段</td><td><code>EmbeddingStoreContentRetriever</code></td></tr>
             </tbody>
           </table>
         </div>
 
-        <h2 id="loaders">DocumentLoader：文件、URL 与 ClassPath</h2>
-        <pre data-lang="java" data-file="加载文件">Document document = FileSystemDocumentLoader.loadDocument(
+        <h2 id="loaders">第二步：加载文档</h2>
+        <p>
+          先准备一份 <code>docs/refund.md</code>，内容随意，只要是你的业务资料。然后加载：
+        </p>
+        <pre data-lang="java" data-file="加载">Document document = FileSystemDocumentLoader.loadDocument(
         Path.of("docs/refund.md"),
         new TextDocumentParser());</pre>
+        <p>
+          加载器只负责把文件读成 <code>Document</code>；PDF、Word、网页需要换对应的 parser / loader。
+          本章先用纯文本，避免一开始就卡在格式上。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/loader/FileSystemDocumentLoader.java:49">FileSystemDocumentLoader.java:49</span>
         </p>
 
-        <h2 id="splitters">DocumentSplitter：按字符、段落与 token</h2>
-        <pre data-lang="java" data-file="递归切分">DocumentSplitter splitter = DocumentSplitters.recursive(500, 50);
+        <h2 id="splitters">第三步：切分文档</h2>
+        <pre data-lang="java" data-file="切分">DocumentSplitter splitter = DocumentSplitters.recursive(500, 50);
 List&lt;TextSegment&gt; segments = splitter.split(document);</pre>
         <p>
-          两个参数是<strong>字符数</strong>：每段最多 500 字符，重叠 50 字符。切分粒度直接影响召回质量：
-          太小会丢上下文，太大会挤占提示词预算。按 token 切分要用三参数重载并传
+          两个参数是<strong>字符数</strong>：每段最多 500 字符，相邻段重叠 50 字符。
+          重叠是为了避免一句话被切断后语义丢失。按 token 切分要用三参数重载并传
           <code>TokenCountEstimator</code>。
         </p>
+        <div class="callout warn">
+          <span class="ct">切太大或太小都不好</span>
+          <p>
+            太小：一段话被切碎，检索到了也缺上下文；太大：一次塞进太多无关内容，挤占提示词预算。
+            先用 300–800 字符起步，再根据召回效果调。
+          </p>
+        </div>
         <p class="src-line">
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:45">DocumentSplitters.java:45</span>
-          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/document/DocumentSplitter.java:18">DocumentSplitter.java:18</span>
         </p>
 
-        <h2 id="embedding">EmbeddingModel：维度与批处理</h2>
+        <h2 id="embedding">第四步：把文本变成向量</h2>
         <p>
-          <code>EmbeddingModel.embed(String/TextSegment)</code> 返回 <code>Response&lt;Embedding&gt;</code>
-          （用 <code>.content()</code> 取向量）；<code>embed(EmbeddingRequest)</code> 返回
-          <code>EmbeddingResponse</code>。写入向量库前必须确认 <code>dimension()</code> 一致，否则建表或插入会失败。
+          向量化模型把文本映射成一个数字数组，语义相近的文本距离更近。
+          本章用本地模型，第一次运行会下载模型文件：
+        </p>
+        <pre data-lang="java" data-file="本地 embedding">EmbeddingModel embeddingModel = new AllMiniLmL6V2EmbeddingModel();</pre>
+        <p>
+          这个模型输出 384 维向量。写入向量库前必须确认维度一致；换模型就要重建索引。
+          不想下载本地模型时，也可以换成 OpenAI / DashScope 的 embedding 模型。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/embedding/EmbeddingModel.java:39">EmbeddingModel.java:39</span>
         </p>
 
-        <h2 id="store">EmbeddingStore：内存与 pgvector</h2>
+        <h2 id="store">第五步：把向量存起来</h2>
+        <pre data-lang="java" data-file="内存向量库">EmbeddingStore&lt;TextSegment&gt; store = new InMemoryEmbeddingStore&lt;&gt;();</pre>
         <p>
-          <code>InMemoryEmbeddingStore</code> 适合测试；生产常用 pgvector、Milvus、Qdrant 等。
-          store 的职责是保存向量与原文，并支持按相似度检索。
+          内存库适合学习和测试，重启就清空。生产环境常用 pgvector、Milvus、Qdrant 等；
+          接口相同，换实现即可。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStore.java:27">EmbeddingStore.java:27</span>
         </p>
 
-        <h2 id="ingestor">EmbeddingStoreIngestor：一条龙入库</h2>
-        <pre data-lang="java" data-file="一条龙入库">EmbeddingStore&lt;TextSegment&gt; store = new InMemoryEmbeddingStore&lt;&gt;();
-
-EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
-        .documentSplitter(DocumentSplitters.recursive(500, 50))
+        <h2 id="ingestor">第六步：用一条龙入库</h2>
+        <p>
+          <code>EmbeddingStoreIngestor</code> 把「切分 + 向量化 + 入库」串起来，省得手动循环：
+        </p>
+        <pre data-lang="java" data-file="入库">EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
+        .documentSplitter(splitter)
         .embeddingModel(embeddingModel)
         .embeddingStore(store)
         .build();
 
 ingestor.ingest(document);</pre>
+        <p>
+          入库是离线任务。文档变更后重新跑这一段，不要在每次用户提问时重新解析整份文档。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStoreIngestor.java:54">EmbeddingStoreIngestor.java:54</span>
         </p>
 
-        <h2 id="retrieval">ContentRetriever 与 RetrievalAugmentor</h2>
-        <pre data-lang="java" data-file="接进 AI Service">ContentRetriever retriever = EmbeddingStoreContentRetriever.builder()
+        <h2 id="retrieval">第七步：把检索接进 AI Service</h2>
+        <pre data-lang="java" data-file="检索 + AI Service">ContentRetriever retriever = EmbeddingStoreContentRetriever.builder()
         .embeddingStore(store)
         .embeddingModel(embeddingModel)
         .maxResults(4)
         .minScore(0.6)
         .build();
 
-Assistant assistant = AiServices.builder(Assistant.class)
+SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
         .chatModel(model)
         .contentRetriever(retriever)
-        .build();</pre>
+        .build();
+
+System.out.println(assistant.ask("退款需要几天？"));</pre>
         <p>
-          每次调用前，框架会用用户问题召回若干 <code>Content</code>，拼进提示词。
-          <code>maxResults</code> 默认 3、<code>minScore</code> 默认 0.0。
+          每次调用前，框架会用用户问题检索若干片段，拼进提示词。默认
+          <code>maxResults</code> 是 3、<code>minScore</code> 是 0.0。
+          先观察召回条数与分数，再调阈值。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/ContentRetriever.java:36">ContentRetriever.java:36</span>
-          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:72">EmbeddingStoreContentRetriever.java:72</span>
-          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:73">EmbeddingStoreContentRetriever.java:73</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:70">EmbeddingStoreContentRetriever.java:70</span>
         </p>
 
-        <h2 id="cheatsheet">API 速查</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>步骤</th><th>API</th></tr></thead>
-            <tbody>
-              <tr><td>加载</td><td><code>FileSystemDocumentLoader.loadDocument(...)</code></td></tr>
-              <tr><td>切分</td><td><code>DocumentSplitters.recursive(...)</code></td></tr>
-              <tr><td>入库</td><td><code>EmbeddingStoreIngestor.builder()</code></td></tr>
-              <tr><td>检索</td><td><code>EmbeddingStoreContentRetriever.builder()</code></td></tr>
-              <tr><td>接 AI Service</td><td><code>.contentRetriever(...)</code></td></tr>
-            </tbody>
-          </table>
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 回答完全没有用资料</div>
+          <dl>
+            <dt>你会看到</dt><dd>模型还是给通用答案。</dd>
+            <dt>因为</dt><dd>忘了配 <code>contentRetriever</code>，或检索为空。</dd>
+            <dt>改成</dt><dd>先打印检索结果；确认 <code>maxResults</code> 不太小、<code>minScore</code> 不太高。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">2. 维度不匹配</div>
+          <dl>
+            <dt>你会看到</dt><dd>入库或查询时报向量维度错误。</dd>
+            <dt>因为</dt><dd>embedding 模型换了，但索引还是旧维度。</dd>
+            <dt>改成</dt><dd>换模型后全量重建索引；本地模型是 384 维，OpenAI 常见 1536 维。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 召回片段缺上下文</div>
+          <dl>
+            <dt>你会看到</dt><dd>检索到了关键词，但回答断章取义。</dd>
+            <dt>因为</dt><dd>切分太小，或重叠不够。</dd>
+            <dt>改成</dt><dd>增大段长/重叠，或按标题/段落切分。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 每次请求都重新入库</div>
+          <dl>
+            <dt>你会看到</dt><dd>第一次回答很慢，CPU/网络飙升。</dd>
+            <dt>因为</dt><dd>把加载、切分、embedding 放在了请求路径里。</dd>
+            <dt>改成</dt><dd>入库放离线任务；请求只做检索与生成。</dd>
+          </dl>
         </div>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">换了 embedding 模型却没重建索引</span>
-          <p>维度或语义空间变了，旧向量不可用；必须全量重算。</p>
-        </div>
-        <div class="callout warn">
-          <span class="ct">minScore 设得太高</span>
-          <p>召回为空时模型只能瞎答；先看召回条数，再调阈值。</p>
+        <h2 id="pitfalls">动手练习：做一个退款政策问答</h2>
+        <ol>
+          <li>写一份 1–2 页的 <code>refund.md</code>，包含退款条件、时限、所需材料。</li>
+          <li>用本章代码完成加载、切分、入库。</li>
+          <li>问三个问题：一个答案在文档里、一个不在、一个需要跨两段。</li>
+          <li>打印每次召回的片段与分数，观察 <code>minScore</code> 的影响。</li>
+          <li>进阶：把 <code>InMemoryEmbeddingStore</code> 换成 pgvector，重启后验证索引还在。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能解释「为什么要先切分再向量化」，并能根据召回结果调整段长与阈值，
+            这一章就过关了。
+          </p>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="09-rag-advanced.html">09 RAG 进阶</a>，把查询改写、重排与多路召回补上。</p>
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在有了一个最小 RAG：一份文档、一个向量库、一个检索器。
+          下一章 <a href="09-rag-advanced.html">09 RAG 进阶</a> 会处理更麻烦的情况：
+          多轮追问、多个知识库、召回不准、需要重排。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
