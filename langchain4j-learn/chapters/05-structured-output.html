@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。" />
+    <meta
+      name="description"
+      content="从让 AI Service 返回一个 record 开始，理解 JSON Schema、POJO 映射、枚举与嵌套对象、业务校验与流式场景的边界。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="05 结构化输出：JSON Schema、POJO 与校验 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。" />
-    <title>05 结构化输出：JSON Schema、POJO 与校验 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="05 结构化输出：让接口直接返回对象 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="从 record 返回值开始，理解 JSON Schema、POJO 映射、校验与流式边界。" />
+    <title>05 结构化输出：让接口直接返回对象 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,100 +27,199 @@
   <body data-page="05-structured-output" data-root="..">
     <main>
       <article class="article">
-        <h1>05 · 结构化输出：JSON Schema、POJO 与校验</h1>
-        <p class="lede">JSON Schema 生成、POJO/record 映射、枚举与嵌套对象、校验失败重试、流式结构化输出。</p>
-        <h2 id="goals">读完你能做到</h2>
+        <h1>05 · 结构化输出：让接口直接返回对象</h1>
+        <p class="lede">
+          上一章的 AI Service 返回字符串。业务代码真正想要的是对象：订单、电影、分类结果。
+          这一章从「让接口返回一个 record」开始，逐步理解 JSON Schema、嵌套对象、业务校验，
+          以及为什么流式场景不能直接返回对象。
+        </p>
+
+        <h2 id="goals">学完这一章，你能做什么</h2>
         <ul class="goals">
-          <li>让 AI Service 直接返回 record / POJO</li>
-          <li>理解框架如何从返回类型生成 JSON Schema</li>
-          <li>处理枚举、列表与嵌套对象</li>
-          <li>知道失败时怎么补救</li>
+          <li>让 AI Service 直接返回 record / POJO，而不是自己解析 JSON</li>
+          <li>理解框架什么时候用 JSON Schema，什么时候退回提示词格式说明</li>
+          <li>处理列表、枚举与嵌套对象</li>
+          <li>知道解析失败、业务校验失败与流式场景分别该怎么处理</li>
         </ul>
 
-        <h2 id="why">先说为什么：结构化输出不是 prompt 技巧</h2>
+        <h2 id="why">先理解：为什么需要让模型返回对象</h2>
         <p>
-          在 LangChain4j 里，返回类型就是契约：当模型支持
-          <code>RESPONSE_FORMAT_JSON_SCHEMA</code> 时，<code>AiServices</code> 会为 POJO / record 生成
-          JSON Schema；不支持时则退化为「在提示词里追加格式说明」，再由框架解析。
-          两种情况都不需要你手写完整的 JSON 示例。
+          假设你要推荐电影。返回字符串时，业务代码要自己解析：
         </p>
-        <p class="src-line">
-          是否走 JSON Schema <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/DefaultAiServices.java:389">DefaultAiServices.java:389</span>；
-          能力探测 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/DefaultAiServices.java:1485">DefaultAiServices.java:1485</span>。
+        <pre data-lang="text" data-file="字符串返回">推荐《流浪地球》，2023 年，科幻 / 冒险。</pre>
+        <p>
+          解析器要处理中文书名号、年份位置、分隔符，模型换个说法就崩。
+          更好的方式是把「返回什么」定义成 Java 类型：
+        </p>
+        <pre data-lang="java" data-file="对象返回">record Movie(String title, int year, List&lt;String&gt; genres) {}</pre>
+        <p>
+          AI Service 的返回类型就是契约。框架会要求模型按这个结构输出，再把 JSON 映射成对象。
+          你拿到的是 <code>Movie</code>，不是一段待解析文本。
         </p>
 
-        <h2 id="json-schema">JSON Schema：让模型知道字段</h2>
+        <h2 id="json-schema">第一步：让接口返回一个 record</h2>
+        <pre data-lang="java" data-file="MovieAssistant.java">record Movie(String title, int year, List&lt;String&gt; genres) {}
+
+interface MovieAssistant {
+    @UserMessage("推荐一部{{genre}}电影，返回标题、年份和类型")
+    Movie recommend(@V("genre") String genre);
+}
+
+MovieAssistant assistant = AiServices.create(MovieAssistant.class, model);
+Movie movie = assistant.recommend("科幻");
+
+System.out.println(movie.title());
+System.out.println(movie.year());
+System.out.println(movie.genres());</pre>
         <p>
-          <code>ServiceOutputParser.jsonSchema(Type)</code> 负责从返回类型推导 schema；
-          <code>outputFormatInstructions(Type)</code> 生成给模型的格式说明。
+          运行成功后，先观察三件事：
+        </p>
+        <ul>
+          <li>方法返回的是 <code>Movie</code>，不是 <code>String</code>。</li>
+          <li>业务代码没有出现 <code>ObjectMapper</code> 或 <code>JSON.parse</code>。</li>
+          <li>模型如果返回多余字段，通常不会导致解析失败（框架默认忽略未知字段）。</li>
+        </ul>
+
+        <h2 id="pojo">第二步：看框架如何生成 JSON Schema</h2>
+        <p>
+          <code>ServiceOutputParser</code> 会从返回类型推导 JSON Schema，并生成给模型的格式说明。
+          但这里有一个关键前提：<strong>模型要支持 JSON Schema 响应格式</strong>。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>模型能力</th><th>框架行为</th></tr></thead>
+            <tbody>
+              <tr><td>支持 <code>RESPONSE_FORMAT_JSON_SCHEMA</code></td><td>把 schema 作为响应格式发给模型</td></tr>
+              <tr><td>不支持</td><td>退化为「在提示词里追加格式说明」，再解析返回文本</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          所以同一段代码在不同 provider 上表现可能不同：支持 schema 的模型更稳定，
+          不支持的模型更依赖提示词和解析器的容错。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/output/ServiceOutputParser.java:77">ServiceOutputParser.java:77</span>
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/output/ServiceOutputParser.java:98">ServiceOutputParser.java:98</span>
         </p>
 
-        <h2 id="pojo">POJO 与 record：返回值映射</h2>
-        <pre data-lang="java" data-file="返回 record">record Movie(String title, int year, List&lt;String&gt; genres) {}
+        <h2 id="enums">第三步：处理列表、枚举与嵌套对象</h2>
+        <p>
+          结构化输出不只支持扁平对象。下面三种结构很常见：
+        </p>
+        <pre data-lang="java" data-file="列表、枚举、嵌套">enum Genre { SCI_FI, DRAMA, COMEDY }
 
-interface MovieAssistant {
-    @UserMessage("推荐一部 {{genre}} 电影，返回 JSON")
-    Movie recommend(@V("genre") String genre);
-}
+record Actor(String name, String role) {}
 
-MovieAssistant assistant = AiServices.create(MovieAssistant.class, model);
-Movie movie = assistant.recommend("科幻");
-System.out.println(movie.title() + " / " + movie.year());</pre>
+record Movie(
+        String title,
+        int year,
+        Genre genre,
+        List&lt;Actor&gt; actors) {}</pre>
+        <p>
+          框架会为枚举生成约束，为列表生成数组 schema，为嵌套 record 递归生成对象 schema。
+          重复类型会生成 <code>$ref</code> / definitions，支持递归结构。
+        </p>
+        <div class="callout warn">
+          <span class="ct">字段名就是模型看到的字段名</span>
+          <p>
+            用 <code>f1</code>、<code>f2</code> 这种名字，模型只能猜含义。给字段加
+            <code>@Description</code>（<code>dev.langchain4j.model.output.structured.Description</code>），
+            比在提示词里重复解释更稳。
+          </p>
+        </div>
 
-        <h2 id="enums">枚举、列表与嵌套对象</h2>
+        <h2 id="validation">第四步：解析成功不等于业务正确</h2>
+        <p>
+          框架负责「JSON → 对象」，但不负责「年份不能是 1800」「金额必须大于 0」。
+          先做最简单的业务校验：
+        </p>
+        <pre data-lang="java" data-file="业务校验">Movie movie = assistant.recommend("科幻");
+
+if (movie.year() &lt; 1900 || movie.year() &gt; 2100) {
+    throw new IllegalStateException("模型返回了不合理年份：" + movie.year());
+}</pre>
+        <p>
+          需要自动重试时，可以用输出护栏（<code>OutputGuardrail</code>）：
+          护栏失败会返回一条反馈，框架把反馈拼回上下文并重新请求，默认最多重试 2 次。
+          护栏适合「格式/范围」这类可自动纠正的问题；复杂业务规则仍建议人工或上层服务处理。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/guardrail/OutputGuardrail.java:14">OutputGuardrail.java:14</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/guardrail/config/OutputGuardrailsConfig.java:18">OutputGuardrailsConfig.java:18</span>
+        </p>
+
+        <h2 id="streaming">第五步：流式场景怎么办</h2>
+        <p>
+          流式 token 不是完整 JSON，不能边收边解析成对象。而且框架在流式模式下不会自动生成
+          JSON Schema，也不会自动把结果解析成 POJO。
+        </p>
         <ul>
-          <li>枚举字段会生成 <code>enum</code> 约束；模型给出不在枚举里的值会解析失败。</li>
-          <li><code>List&lt;T&gt;</code> / <code>Set&lt;T&gt;</code> 会生成数组 schema。</li>
-          <li>嵌套 record 会递归生成对象 schema；重复类型会生成 <code>$ref</code> / definitions，支持递归结构。</li>
+          <li>要自动结构化输出：用非流式返回类型。</li>
+          <li>要流式：返回 <code>TokenStream</code>，在 <code>onCompleteResponse</code> 里拿完整文本，自己解析。</li>
+          <li>或者先流式展示，再把完整文本交给一个非流式 AI Service 做结构化抽取。</li>
         </ul>
-
-        <h2 id="validation">校验与失败重试</h2>
-        <p>
-          框架负责「JSON → 对象」的解析，但业务校验（金额为正、日期范围）仍要你自己做。
-          常见做法是校验失败后把错误信息拼回下一轮请求，让模型修正；注意设置最大重试次数，避免无限循环。
-        </p>
-        <div class="callout warn">
-          <span class="ct">模型返回 markdown 代码围栏</span>
-          <p>部分模型会包一层 markdown 代码围栏；解析器通常能处理，但最好在系统提示里明确「只输出 JSON」。</p>
-        </div>
-
-        <h2 id="streaming">流式结构化输出</h2>
-        <p>
-          流式场景下，部分 token 不是完整 JSON，不能边收边解析成对象。可以让接口返回
-          <code>TokenStream</code>，在 <code>onCompleteResponse</code> 里拿 <code>ChatResponse</code>，
-          再自己解析 <code>aiMessage().text()</code>。注意：<code>TokenStream</code> 不会自动把结果解析成 POJO；
-          需要自动结构化输出时，用非流式返回类型。
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/TokenStream.java:218">TokenStream.java:218</span>
         </p>
 
-        <h2 id="cheatsheet">API 速查</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>返回类型</th><th>解析结果</th></tr></thead>
-            <tbody>
-              <tr><td><code>String</code></td><td>原始文本</td></tr>
-              <tr><td><code>record</code> / POJO</td><td>JSON 反序列化后的对象</td></tr>
-              <tr><td><code>List&lt;T&gt;</code></td><td>对象列表</td></tr>
-              <tr><td><code>enum</code></td><td>枚举常量</td></tr>
-            </tbody>
-          </table>
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 解析失败 / JSON 不完整</div>
+          <dl>
+            <dt>你会看到</dt><dd><code>OutputParsingException</code> 或 Jackson 反序列化错误。</dd>
+            <dt>因为</dt><dd>模型没有按结构输出，或输出被截断。</dd>
+            <dt>改成</dt><dd>确认 <code>maxOutputTokens</code> 够用；在系统提示里强调「只输出 JSON」；给字段加描述。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">2. 枚举值不在范围内</div>
+          <dl>
+            <dt>你会看到</dt><dd>反序列化失败，提示 unknown enum value。</dd>
+            <dt>因为</dt><dd>模型生成了枚举里不存在的值。</dd>
+            <dt>改成</dt><dd>减少枚举数量、加描述，或让模型返回字符串后自己映射。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 流式接口返回 POJO 失败</div>
+          <dl>
+            <dt>你会看到</dt><dd>运行时异常或拿到空对象。</dd>
+            <dt>因为</dt><dd><code>TokenStream</code> 只给完整 <code>ChatResponse</code>，不会自动解析 POJO。</dd>
+            <dt>改成</dt><dd>流式返回文本，或改用非流式接口做结构化输出。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 模型返回了额外字段</div>
+          <dl>
+            <dt>你会看到</dt><dd>大多数情况下不会报错。</dd>
+            <dt>因为</dt><dd>LangChain4j 默认忽略未知字段。</dd>
+            <dt>改成</dt><dd>如果必须严格，自己配置 ObjectMapper 或做二次校验。</dd>
+          </dl>
         </div>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">字段名和业务含义不一致</span>
-          <p>模型按字段名与描述生成内容；用 <code>@Description</code>（<code>dev.langchain4j.model.output.structured.Description</code>）补语义，别用 <code>f1</code>、<code>f2</code>。<span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/output/structured/Description.java:15">Description.java:15</span></p>
-        </div>
-        <div class="callout warn">
-          <span class="ct">把校验失败当异常吞掉</span>
-          <p>要么重试，要么把错误交给上层；静默返回 null 会让问题更难查。</p>
+        <h2 id="pitfalls">动手练习：从文本到订单对象</h2>
+        <p>把客服助手升级成结构化输出：</p>
+        <ol>
+          <li>定义 <code>record OrderStatus(String orderNo, String status, String eta)</code>。</li>
+          <li>让 AI Service 返回 <code>OrderStatus</code>，而不是字符串。</li>
+          <li>给字段加 <code>@Description</code>，让模型知道 <code>eta</code> 是预计到达时间。</li>
+          <li>加业务校验：<code>status</code> 只能是 <code>PAID</code>、<code>SHIPPED</code>、<code>DELIVERED</code>。</li>
+          <li>进阶：用 <code>OutputGuardrail</code> 对不合法状态自动重试一次。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能解释「JSON Schema 支持与提示词格式说明的区别」，
+            并能说出「流式为什么不能直接返回 POJO」，这一章就过关了。
+          </p>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="06-tools.html">06 Tool Calling</a>，让模型调用你的 Java 方法。</p>
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在能让模型返回对象，但模型仍然只能「说」，不能「做」。下一章
+          <a href="06-tools.html">06 Tool Calling</a> 会让它调用你的 Java 方法，
+          真正查到订单、执行退款。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
