@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。" />
+    <meta
+      name="description"
+      content="从一条用户消息开始，学会用 System / User / AI / Tool 消息组织提示词，用 PromptTemplate 管理变量，并把图片输入接进对话。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="03 Prompt 与消息：模板、变量与多模态 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。" />
-    <title>03 Prompt 与消息：模板、变量与多模态 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="03 Prompt 与消息：从一条消息到可维护的提示词 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="用消息组织提示词，用 PromptTemplate 管理变量，把图片输入接进对话。" />
+    <title>03 Prompt 与消息：从一条消息到可维护的提示词 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,106 +27,219 @@
   <body data-page="03-prompt" data-root="..">
     <main>
       <article class="article">
-        <h1>03 · Prompt 与消息：模板、变量与多模态</h1>
-        <p class="lede">SystemMessage / UserMessage / AiMessage / ToolExecutionResultMessage、PromptTemplate、变量注入与图片输入。</p>
-        <h2 id="goals">读完你能做到</h2>
-        <ul class="goals">
-          <li>用消息类型而不是一坨字符串表达提示词</li>
-          <li>用 <code>PromptTemplate</code> 管理变量</li>
-          <li>把图片或文件作为 <code>Content</code> 放进用户消息</li>
-          <li>知道模板变量缺失时会发生什么</li>
-        </ul>
-
-        <h2 id="why">先说为什么：提示词是消息列表，不是字符串</h2>
-        <p>
-          模型接口最终接收的是 <code>List&lt;ChatMessage&gt;</code>。字符串只是
-          <code>UserMessage.from(text)</code> 的快捷方式；一旦要做多轮、工具或图片，就必须回到消息层。
+        <h1>03 · Prompt 与消息：从一条消息到可维护的提示词</h1>
+        <p class="lede">
+          上一章我们把消息直接写在代码里。这一章解决两个问题：
+          第一，为什么要用「消息列表」而不是一段字符串；第二，怎么把提示词变成可以维护、可以复用、
+          可以带变量的模板。最后会做一个带系统提示的客服助手。
         </p>
 
-        <h2 id="messages">五类消息：System / User / AI / Tool / Custom</h2>
+        <h2 id="goals">学完这一章，你能做什么</h2>
+        <ul class="goals">
+          <li>说清 System / User / AI / Tool / Custom 五类消息各自负责什么</li>
+          <li>用 <code>PromptTemplate</code> 管理提示词变量，知道变量缺失会怎样</li>
+          <li>把图片作为用户消息的一部分发出去</li>
+          <li>写一个带系统提示、模板变量和日期注入的客服助手</li>
+        </ul>
+
+        <h2 id="why">先理解：提示词不是一段话，而是一组角色消息</h2>
+        <p>
+          很多人第一次写提示词，会写成一个大字符串：
+        </p>
+        <pre data-lang="text" data-file="不推荐：所有内容塞进一段">你是客服。用户问：我的订单到哪了？请只回答订单状态。</pre>
+        <p>
+          这样能跑，但很快会遇到三个问题：
+        </p>
+        <ul>
+          <li>系统约束和用户问题混在一起，模型容易把「客服规则」当成用户说的话。</li>
+          <li>多轮对话时，历史消息无法区分谁说的。</li>
+          <li>工具结果需要作为单独角色回填，字符串模型无法表达。</li>
+        </ul>
+        <p>
+          所以 LangChain4j 的模型接口接收的是 <code>List&lt;ChatMessage&gt;</code>。
+          字符串只是 <code>chat(String)</code> 的快捷方式，背后仍然会包成一条 user 消息。
+        </p>
+
+        <h2 id="messages">第一步：认识五类消息</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>类型</th><th>谁产生</th><th>用途</th></tr></thead>
+            <thead><tr><th>类型</th><th>谁产生</th><th>典型用途</th></tr></thead>
             <tbody>
-              <tr><td><code>SystemMessage</code></td><td>应用</td><td>角色、边界、输出格式</td></tr>
-              <tr><td><code>UserMessage</code></td><td>用户 / 应用</td><td>本轮问题，可带文本与图片</td></tr>
+              <tr><td><code>SystemMessage</code></td><td>应用</td><td>角色、规则、输出格式</td></tr>
+              <tr><td><code>UserMessage</code></td><td>用户 / 应用</td><td>本轮问题，可带文本、图片</td></tr>
               <tr><td><code>AiMessage</code></td><td>模型</td><td>回答或工具调用请求</td></tr>
-              <tr><td><code>ToolExecutionResultMessage</code></td><td>应用 / AI Service（低层 <code>ChatModel</code> 需自行创建）</td><td>工具执行结果，回填给模型</td></tr>
-              <tr><td><code>CustomMessage</code></td><td>应用</td><td>带任意属性的自定义消息</td></tr>
+              <tr><td><code>ToolExecutionResultMessage</code></td><td>应用 / AI Service</td><td>工具执行结果，回填给模型</td></tr>
+              <tr><td><code>CustomMessage</code></td><td>应用</td><td>带任意属性的自定义消息，需 provider 支持</td></tr>
             </tbody>
           </table>
         </div>
+        <p>
+          先写一个最小的两角色对话：
+        </p>
+        <pre data-lang="java" data-file="System + User">List&lt;ChatMessage&gt; messages = List.of(
+        SystemMessage.from("你是电商客服，回答不超过 80 字，不编造订单信息"),
+        UserMessage.from("我的订单 SO-20261106-001 到哪了？")
+);
+
+ChatResponse response = model.chat(ChatRequest.builder()
+        .messages(messages)
+        .build());</pre>
+        <p>
+          注意消息顺序：system 通常在最前，然后是历史 user / AI 消息，最后才是本轮 user。
+          模型不会自己整理顺序，顺序错了，回答也会怪。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/SystemMessage.java:24">SystemMessage.java:24</span>
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/UserMessage.java:39">UserMessage.java:39</span>
           <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/AiMessage.java:32">AiMessage.java:32</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/CustomMessage.java:20">CustomMessage.java:20</span>
         </p>
 
-        <h2 id="templates">PromptTemplate：变量、默认值与转义</h2>
+        <h2 id="templates">第二步：把提示词变成可维护的模板</h2>
+        <p>
+          直接把提示词写在 Java 字符串里，改一次就要重新编译；同一个提示词在多处复制，很容易不一致。
+          模板解决的是「变量替换」这件事：
+        </p>
         <pre data-lang="java" data-file="PromptTemplate">PromptTemplate template = PromptTemplate.from("""
-        你是{{role}}。请用不超过 {{maxWords}} 字回答：
-        {{question}}
+        你是{{role}}。
+        回答要求：{{style}}。
+        用户问题：{{question}}
         """);
 
 Prompt prompt = template.apply(Map.of(
-        "role", "Java 架构师",
-        "maxWords", 120,
-        "question", "什么时候该把 RAG 拆成独立服务？"));
+        "role", "电商客服",
+        "style", "不超过 80 字，不编造订单信息",
+        "question", "我的订单 SO-20261106-001 到哪了？"
+));
 
-String text = model.chat(prompt.toUserMessage().singleText());</pre>
+UserMessage userMessage = prompt.toUserMessage();
+ChatResponse response = model.chat(userMessage);</pre>
         <p>
-          <code>PromptTemplate.from(...)</code> 支持命名变量；<code>apply(Map)</code> 会把变量填进去。
-          变量缺失时会在渲染阶段抛异常，而不是静默留空。
+          模板只认 <code>{{name}}</code> 这种双花括号。单个花括号是普通字符，写 JSON 示例不需要转义。
+          变量缺失时不会静默留空，而是直接抛 <code>IllegalArgumentException</code>。
         </p>
         <p class="src-line">
-          模板入口 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:152">PromptTemplate.java:152</span>；
-          渲染 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:127">PromptTemplate.java:127</span>。
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:152">PromptTemplate.java:152</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/input/PromptTemplate.java:127">PromptTemplate.java:127</span>
         </p>
 
-        <h2 id="params">模板变量与运行时参数</h2>
+        <h2 id="params">第三步：变量、默认值与运行时参数</h2>
         <p>
-          「模板变量」是提示词里的 <code>{{name}}</code>；「运行时参数」是
-          <code>temperature</code>、<code>maxOutputTokens</code> 这些模型参数。两者不要混在一个 Map 里：
-          前者进 <code>PromptTemplate.apply</code>，后者进 <code>ChatRequestParameters</code>。
+          这里要分清两个东西：
         </p>
-
-        <h2 id="multimodal">多模态：文本、图片与文件</h2>
-        <pre data-lang="java" data-file="图片输入">UserMessage message = UserMessage.from(
-        TextContent.from("这张架构图里，哪个组件最可能成为瓶颈？"),
-        ImageContent.from("https://example.com/arch.png"));
-
-ChatResponse response = model.chat(message);</pre>
-        <p>
-          图片是否被支持取决于 provider 与模型；不支持时通常会在 HTTP 层报参数错误。
-          <code>ImageContent.from(...)</code> 可以接收 URL 或 base64。
-        </p>
-
-        <h2 id="cheatsheet">API 速查</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>要做的事</th><th>API</th></tr></thead>
+            <thead><tr><th>名字</th><th>放在哪</th><th>例子</th></tr></thead>
             <tbody>
-              <tr><td>纯文本用户消息</td><td><code>UserMessage.from(text)</code></td></tr>
-              <tr><td>系统消息</td><td><code>SystemMessage.from(text)</code></td></tr>
-              <tr><td>带图片</td><td><code>UserMessage.from(Content...)</code></td></tr>
-              <tr><td>模板</td><td><code>PromptTemplate.from(template)</code></td></tr>
-              <tr><td>填变量</td><td><code>template.apply(Map)</code></td></tr>
+              <tr><td>模板变量</td><td><code>PromptTemplate.apply(Map)</code></td><td><code>{{role}}</code>、<code>{{question}}</code></td></tr>
+              <tr><td>运行时参数</td><td><code>ChatRequestParameters</code></td><td><code>temperature</code>、<code>maxOutputTokens</code></td></tr>
             </tbody>
           </table>
         </div>
+        <p>
+          模板本身没有「默认值语法」。想给默认值，在 Java 侧处理：
+        </p>
+        <pre data-lang="java" data-file="默认值与日期">Map&lt;String, Object&gt; vars = new HashMap&lt;&gt;();
+vars.put("role", role == null ? "电商客服" : role);
+vars.put("style", "不超过 80 字");
+vars.put("question", question);
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">把 JSON 示例直接写进系统提示词</span>
-          <p>只有 <code>{{name}}</code> 会触发替换；单个 <code>{</code> / <code>}</code> 是字面量，JSON 示例不需要转义。要输出字面 <code>{{...}}</code>，请把它作为变量值传入，或换一个支持转义的模板工厂。</p>
+Prompt prompt = PromptTemplate.from("""
+        你是{{role}}。今天是{{current_date}}。
+        回答要求：{{style}}。
+        用户问题：{{question}}
+        """).apply(vars);</pre>
+        <p>
+          <code>current_date</code>、<code>current_time</code>、<code>current_date_time</code>
+          是框架自动注入的特殊变量，不需要你手动传。
+        </p>
+        <p>
+          运行时参数则在请求上设置，和模板变量互不影响：
+        </p>
+        <pre data-lang="java" data-file="运行时参数">ChatRequest request = ChatRequest.builder()
+        .messages(prompt.toUserMessage())
+        .parameters(ChatRequestParameters.builder()
+                .temperature(0.2)
+                .maxOutputTokens(300)
+                .build())
+        .build();</pre>
+
+        <h2 id="multimodal">第四步：让用户发图片</h2>
+        <p>
+          <code>UserMessage</code> 不只能装字符串。把文本和图片作为 <code>Content</code> 一起放进去：
+        </p>
+        <pre data-lang="java" data-file="图文消息">UserMessage message = UserMessage.from(
+        TextContent.from("这张图里是什么错误？"),
+        ImageContent.from("https://example.com/error.png")
+);
+
+ChatResponse response = model.chat(message);</pre>
+        <p>
+          图片是否可用取决于模型与 provider；不支持时通常会在 HTTP 层报参数错误。
+          本地文件可以先转成 base64 再传给 <code>ImageContent.from(...)</code>。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/ImageContent.java:24">ImageContent.java:24</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/data/message/ImageContent.java:228">ImageContent.java:228</span>
+        </p>
+
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 模板变量缺失</div>
+          <dl>
+            <dt>你会看到</dt><dd><code>IllegalArgumentException: Value for the variable 'role' is missing</code></dd>
+            <dt>因为</dt><dd>模板里写了 <code>{{role}}</code>，但 <code>apply(Map)</code> 没传这个键。</dd>
+            <dt>改成</dt><dd>补齐 Map；需要默认值时在 Java 侧用 <code>getOrDefault</code>。</dd>
+          </dl>
         </div>
-        <div class="callout warn">
-          <span class="ct">以为 <code>SystemMessage</code> 一定生效</span>
-          <p>部分模型/网关会忽略 system 角色；关键约束要在用户消息里再强调一次。</p>
+        <div class="pitfall">
+          <div class="pf-h">2. 把 JSON 的花括号转义了</div>
+          <dl>
+            <dt>你会看到</dt><dd>输出里出现反斜杠，或模板变量没替换。</dd>
+            <dt>因为</dt><dd>模板只认 <code>{{name}}</code>，单花括号不需要转义。</dd>
+            <dt>改成</dt><dd>JSON 原样写；要输出字面 <code>{{...}}</code>，把它作为变量值传入。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. system 消息没生效</div>
+          <dl>
+            <dt>你会看到</dt><dd>模型没有遵守角色设定。</dd>
+            <dt>因为</dt><dd>provider 忽略 system 角色，或 system 消息不在列表开头。</dd>
+            <dt>改成</dt><dd>把 system 放最前；关键约束在 user 消息里再强调一次。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 图片请求 400</div>
+          <dl>
+            <dt>你会看到</dt><dd>HTTP 400，提示不支持的 content 类型。</dd>
+            <dt>因为</dt><dd>当前模型/端点不支持图片输入。</dd>
+            <dt>改成</dt><dd>换支持视觉的模型，或把图片先转成文字描述再发。</dd>
+          </dl>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="04-ai-services.html">04 AI Services</a>，把这些消息与模型调用收进一个接口。</p>
+        <h2 id="pitfalls">动手练习：带系统提示的客服助手</h2>
+        <p>把本章内容合成一个客服小助手，要求：</p>
+        <ol>
+          <li>用 <code>PromptTemplate</code> 管理 system 提示，角色是「电商客服」。</li>
+          <li>用户问题里带订单号，模板变量 <code>{{orderNo}}</code> 注入。</li>
+          <li>system 提示里带 <code>{{current_date}}</code>，让模型知道今天日期。</li>
+          <li>给请求设置 <code>temperature(0.2)</code> 与 <code>maxOutputTokens(200)</code>。</li>
+          <li>进阶：如果用户输入以 <code>image:</code> 开头，把后面的 URL 作为图片发出去。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能解释「模板变量和运行时参数为什么不能混在一个 Map 里」，
+            并写出一个带默认值的模板渲染，这一章就过关了。
+          </p>
+        </div>
+
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在能组织消息、管理模板、处理变量和图片。但每次调用仍然要自己拼 <code>ChatRequest</code>。
+          下一章 <a href="04-ai-services.html">04 AI Services</a> 会把这一整套收进一个 Java 接口，
+          让你只写业务方法名。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>

@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="AiServices.create、接口方法契约、@SystemMessage / @UserMessage / @V、记忆与工具接入、TokenStream。" />
+    <meta
+      name="description"
+      content="从手写 ChatRequest 到声明式 AI Service：写第一个接口、理解参数与返回值映射、接入记忆和工具，最后改成流式。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="04 AI Services：声明式接口与注解 · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="AiServices.create、接口方法契约、@SystemMessage / @UserMessage / @V、记忆与工具接入、TokenStream。" />
-    <title>04 AI Services：声明式接口与注解 · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="04 AI Services：把一次调用收进一个接口 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="写第一个 AI Service，接入记忆、工具与流式。" />
+    <title>04 AI Services：把一次调用收进一个接口 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,125 +27,259 @@
   <body data-page="04-ai-services" data-root="..">
     <main>
       <article class="article">
-        <h1>04 · AI Services：声明式接口与注解</h1>
-        <p class="lede">AiServices.create、接口方法契约、@SystemMessage / @UserMessage / @V、记忆与工具接入、TokenStream。</p>
-        <h2 id="goals">读完你能做到</h2>
-        <ul class="goals">
-          <li>用一个 Java 接口描述 AI 能力，而不是到处拼 <code>ChatRequest</code></li>
-          <li>用注解绑定系统提示词、用户模板与变量</li>
-          <li>把记忆与工具挂到同一个 AI Service 上</li>
-          <li>知道流式接口为什么返回 <code>TokenStream</code></li>
-        </ul>
-
-        <h2 id="why">先说为什么：AI Services 是声明式门面</h2>
-        <p>
-          它把「构造消息 → 调模型 → 解析结果 → 处理工具循环」收进一个动态代理。
-          你只写接口，框架在运行时生成实现。复杂逻辑仍然可以退回手写 <code>ChatModel</code>。
+        <h1>04 · AI Services：把一次调用收进一个接口</h1>
+        <p class="lede">
+          前两章我们一直在手写 <code>ChatRequest</code>。这一章换一种方式：把「问什么、怎么问、带什么记忆、
+          能用什么工具」写成一个 Java 接口，让框架生成实现。你会先写一个最小接口，再逐步加上记忆、
+          工具和流式，最后做一个能查订单的客服助手。
         </p>
 
-        <h2 id="minimal">最小可跑：一个接口 + AiServices.create</h2>
-        <pre data-lang="java" data-file="Assistant.java">interface Assistant {
-    @SystemMessage("你是简洁的中文技术编辑，只回答 Java 问题")
-    @UserMessage("解释 {{topic}}，不超过 100 字")
-    String explain(@V("topic") String topic);
+        <h2 id="goals">学完这一章，你能做什么</h2>
+        <ul class="goals">
+          <li>用 <code>AiServices.create</code> 写出第一个 AI Service</li>
+          <li>理解方法参数、返回值与注解的映射规则</li>
+          <li>给 AI Service 接上记忆，做多轮对话</li>
+          <li>给 AI Service 接上工具，让模型查业务数据</li>
+          <li>把同步接口改成流式接口</li>
+        </ul>
+
+        <h2 id="why">先理解：为什么要把调用收进一个接口</h2>
+        <p>
+          上一章的代码大致是这样：
+        </p>
+        <pre data-lang="java" data-file="手写调用">ChatRequest request = ChatRequest.builder()
+        .messages(
+                SystemMessage.from("你是电商客服"),
+                UserMessage.from("订单 " + orderNo + " 到哪了？"))
+        .parameters(ChatRequestParameters.builder().temperature(0.2).build())
+        .build();
+ChatResponse response = model.chat(request);</pre>
+        <p>
+          只有一次调用还好。一旦有十个业务场景，你会得到十个几乎一样的请求构造块：
+          系统提示重复、参数重复、消息拼接重复。AI Service 把这些重复收进接口：
+        </p>
+        <pre data-lang="java" data-file="声明式">interface SupportAssistant {
+    @SystemMessage("你是电商客服")
+    @UserMessage("订单 {{orderNo}} 到哪了？")
+    String ask(@V("orderNo") String orderNo);
+}</pre>
+        <p>
+          你只写「业务上问什么」，框架负责构造消息、调用模型、解析返回值。
+          底层仍然是 <code>ChatModel</code>，只是多了一层代理。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:194">AiServices.java:194</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:218">AiServices.java:218</span>
+        </p>
+
+        <h2 id="minimal">第一步：写第一个 AI Service</h2>
+        <pre data-lang="java" data-file="SupportAssistant.java">interface SupportAssistant {
+    @SystemMessage("你是电商客服，回答不超过 80 字")
+    @UserMessage("订单 {{orderNo}} 到哪了？")
+    String ask(@V("orderNo") String orderNo);
 }
 
-Assistant assistant = AiServices.create(Assistant.class, model);
-System.out.println(assistant.explain("虚拟线程"));</pre>
-        <p class="src-line">
-          入口 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:194">AiServices.java:194</span>；
-          builder <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:218">AiServices.java:218</span>。
+SupportAssistant assistant = AiServices.create(SupportAssistant.class, model);
+String answer = assistant.ask("SO-20261106-001");
+System.out.println(answer);</pre>
+        <p>
+          跑通之后，先确认三件事：
         </p>
-
-        <h2 id="interface">接口契约：方法名、参数与返回值</h2>
         <ul>
-          <li>一个方法就是一次调用。单个无注解参数会作为用户消息；多个参数必须用 <code>@UserMessage</code> + <code>@V</code>，否则会报「没有定义用户消息」。</li>
-          <li>返回值决定解析方式：<code>String</code>、POJO、<code>List&lt;T&gt;</code>、<code>enum</code> 等。</li>
-          <li>方法可以抛运行时异常；模型/网络错误会从代理里抛出。</li>
+          <li><code>AiServices.create</code> 的第二个参数是 <code>ChatModel</code>，不是模型名字符串。</li>
+          <li>接口方法可以没有实现，框架会在运行时生成代理。</li>
+          <li>返回类型是 <code>String</code>，所以框架直接把 AI 文本给你。</li>
         </ul>
 
-        <h2 id="annotations">常用注解：@SystemMessage、@UserMessage、@V</h2>
+        <h2 id="interface">第二步：方法参数与返回值怎么映射</h2>
+        <p>
+          这里有一条新手最容易踩的规则：
+        </p>
+        <div class="callout warn">
+          <span class="ct">只有一个无注解参数时，它才会自动变成用户消息</span>
+          <p>
+            如果有多个参数，必须用 <code>@UserMessage</code> + <code>@V</code> 明确告诉框架
+            哪个参数填哪个变量，否则会报「没有定义用户消息」。
+          </p>
+        </div>
+        <pre data-lang="java" data-file="多参数必须显式绑定">interface SupportAssistant {
+    @SystemMessage("你是电商客服")
+    @UserMessage("用户 {{userId}} 问订单 {{orderNo}} 的状态")
+    String ask(@V("userId") String userId,
+               @V("orderNo") String orderNo);
+}</pre>
+        <p>
+          返回值也不只支持 <code>String</code>：
+        </p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>注解</th><th>作用</th></tr></thead>
+            <thead><tr><th>返回类型</th><th>框架怎么处理</th></tr></thead>
             <tbody>
-              <tr><td><code>@SystemMessage</code></td><td>固定系统提示词，可引用模板变量</td></tr>
-              <tr><td><code>@UserMessage</code></td><td>用户消息模板</td></tr>
-              <tr><td><code>@V</code></td><td>把方法参数绑定到模板变量</td></tr>
-              <tr><td><code>@MemoryId</code></td><td>指定多用户记忆的会话键</td></tr>
+              <tr><td><code>String</code></td><td>直接取 AI 文本</td></tr>
+              <tr><td>POJO / record</td><td>按 JSON Schema 解析成对象（下一章展开）</td></tr>
+              <tr><td><code>TokenStream</code></td><td>返回流式句柄，不阻塞</td></tr>
+              <tr><td><code>Result&lt;T&gt;</code></td><td>同时拿到内容和工具执行记录</td></tr>
             </tbody>
           </table>
         </div>
+
+        <h2 id="annotations">第三步：用注解管系统提示与变量</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>注解</th><th>放在哪</th><th>作用</th></tr></thead>
+            <tbody>
+              <tr><td><code>@SystemMessage</code></td><td>方法或接口</td><td>固定系统提示，可含 <code>{{var}}</code></td></tr>
+              <tr><td><code>@UserMessage</code></td><td>方法或参数</td><td>用户消息模板</td></tr>
+              <tr><td><code>@V</code></td><td>方法参数</td><td>把参数绑定到模板变量</td></tr>
+              <tr><td><code>@MemoryId</code></td><td>方法参数</td><td>指定多用户记忆的会话键</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          一个常见组合：系统提示放接口上，用户模板放方法上，变量用 <code>@V</code> 绑定。
+        </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/SystemMessage.java:54">SystemMessage.java:54</span>
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/UserMessage.java:38">UserMessage.java:38</span>
           <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/V.java:40">V.java:40</span>
         </p>
 
-        <h2 id="memory">把 ChatMemory 接进 AI Service</h2>
-        <pre data-lang="java" data-file="带记忆">Assistant assistant = AiServices.builder(Assistant.class)
+        <h2 id="memory">第四步：接上记忆，做多轮助手</h2>
+        <p>
+          上一章我们手动维护历史列表。现在把这件事交给 <code>ChatMemory</code>：
+        </p>
+        <pre data-lang="java" data-file="单用户记忆">SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
         .chatModel(model)
         .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
         .build();
 
-String a = assistant.chat("我叫小明");
-String b = assistant.chat("我叫什么？");</pre>
+System.out.println(assistant.ask("我叫小明"));
+System.out.println(assistant.ask("我叫什么？"));</pre>
         <p>
-          单用户可以用一个 <code>ChatMemory</code>；多用户用
-          <code>chatMemoryProvider(memoryId -&gt; ...)</code>，并在方法参数上标 <code>@MemoryId</code>。
+          多用户场景用 <code>chatMemoryProvider</code>，并在方法参数上标 <code>@MemoryId</code>：
         </p>
-
-        <h2 id="tools">把工具接进 AI Service</h2>
-        <pre data-lang="java" data-file="挂工具">class Calculator {
-    @Tool("计算两个整数之和")
-    int add(int a, int b) { return a + b; }
+        <pre data-lang="java" data-file="多用户记忆">interface SupportAssistant {
+    String ask(@MemoryId String userId, @UserMessage String question);
 }
 
-Assistant assistant = AiServices.builder(Assistant.class)
+SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
         .chatModel(model)
-        .tools(new Calculator())
+        .chatMemoryProvider(id -&gt; MessageWindowChatMemory.withMaxMessages(20))
         .build();</pre>
-        <p>
-          框架会自动生成工具 schema、执行工具、把结果回填，并继续模型循环。你不需要手写
-          <code>tool_calls</code> 的解析。
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:419">AiServices.java:419</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/MemoryId.java:19">MemoryId.java:19</span>
         </p>
 
-        <h2 id="streaming">流式与 TokenStream</h2>
-        <pre data-lang="java" data-file="流式接口">interface StreamingAssistant {
-    TokenStream chat(String message);
+        <h2 id="tools">第五步：接上工具，让模型查数据</h2>
+        <p>
+          记忆解决「记得住」，工具解决「查得到」。给客服加一个订单查询工具：
+        </p>
+        <pre data-lang="java" data-file="OrderTools.java">class OrderTools {
+    @Tool("按订单号查询订单状态，只读")
+    String queryOrder(@P("订单号，例如 SO-20261106-001") String orderNo) {
+        return orderService.statusOf(orderNo);
+    }
 }
 
-TokenStream stream = streamingAssistant.chat("写一段 Java 并流式输出");
+SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
+        .chatModel(model)
+        .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
+        .tools(new OrderTools())
+        .build();
+
+System.out.println(assistant.ask("帮我查一下 SO-20261106-001"));</pre>
+        <p>
+          框架会自动做三件事：把 <code>@Tool</code> 方法转成模型能看懂的 schema、
+          解析模型返回的工具调用、执行工具后把结果回填给模型继续推理。
+          你不需要手写 <code>tool_calls</code> 的解析。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:505">AiServices.java:505</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/agent/tool/Tool.java:26">Tool.java:26</span>
+        </p>
+
+        <h2 id="streaming">第六步：改成流式接口</h2>
+        <p>
+          把返回类型改成 <code>TokenStream</code>，并给 builder 配 <code>streamingChatModel</code>。
+          注意：同一个 AI Service 不能同时配同步和流式模型。
+        </p>
+        <pre data-lang="java" data-file="流式接口">interface StreamingAssistant {
+    @SystemMessage("你是电商客服")
+    TokenStream ask(@UserMessage String question);
+}
+
+StreamingAssistant assistant = AiServices.builder(StreamingAssistant.class)
+        .streamingChatModel(streamingModel)
+        .build();
+
+TokenStream stream = assistant.ask("介绍一下退货政策");
 stream.onPartialResponse(System.out::print)
       .onCompleteResponse(r -&gt; System.out.println("\n完成"))
+      .onError(Throwable::printStackTrace)
       .start();</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:258">AiServices.java:258</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/TokenStream.java:43">TokenStream.java:43</span>
+        </p>
 
-        <h2 id="cheatsheet">API 速查</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>需求</th><th>写法</th></tr></thead>
-            <tbody>
-              <tr><td>最快创建</td><td><code>AiServices.create(Assistant.class, model)</code></td></tr>
-              <tr><td>加记忆</td><td><code>.chatMemory(...)</code> / <code>.chatMemoryProvider(...)</code></td></tr>
-              <tr><td>加工具</td><td><code>.tools(object...)</code></td></tr>
-              <tr><td>加 RAG</td><td><code>.contentRetriever(...)</code></td></tr>
-              <tr><td>流式</td><td>返回 <code>TokenStream</code></td></tr>
-            </tbody>
-          </table>
+        <h2 id="cheatsheet">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. does not have a user message defined</div>
+          <dl>
+            <dt>你会看到</dt><dd>启动或首次调用时抛配置异常。</dd>
+            <dt>因为</dt><dd>方法有多个参数，但没有 <code>@UserMessage</code> 或 <code>@V</code>。</dd>
+            <dt>改成</dt><dd>加 <code>@UserMessage</code> 模板，并用 <code>@V</code> 绑定每个参数。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">2. 同时配了 chatModel 与 streamingChatModel</div>
+          <dl>
+            <dt>你会看到</dt><dd>配置异常：either chatModel or streamingChatModel should be configured。</dd>
+            <dt>因为</dt><dd>框架要求二选一。</dd>
+            <dt>改成</dt><dd>同步接口只配 <code>chatModel</code>；返回 <code>TokenStream</code> 的接口只配 <code>streamingChatModel</code>。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 模型不调用工具</div>
+          <dl>
+            <dt>你会看到</dt><dd>回答正常，但工具没执行。</dd>
+            <dt>因为</dt><dd>工具描述太模糊，或模型不支持 function calling。</dd>
+            <dt>改成</dt><dd>把 <code>@Tool</code> 描述写清「什么时候用、输入是什么、返回什么」。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 多轮对话串用户</div>
+          <dl>
+            <dt>你会看到</dt><dd>A 用户看到 B 用户的历史。</dd>
+            <dt>因为</dt><dd>所有请求共用一个 <code>ChatMemory</code>。</dd>
+            <dt>改成</dt><dd>用 <code>chatMemoryProvider</code> + <code>@MemoryId</code> 按用户隔离。</dd>
+          </dl>
         </div>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">接口方法名乱写</span>
-          <p>方法名会出现在日志与可观测性里；用业务语义命名，别用 <code>doIt</code>。</p>
-        </div>
-        <div class="callout warn">
-          <span class="ct">把复杂分支全塞进一个接口</span>
-          <p>AI Service 适合稳定契约；多步编排、重试与人工审批应放在上层服务。</p>
+        <h2 id="pitfalls">动手练习：客服助手升级</h2>
+        <p>把本章内容合成一个客服助手，要求：</p>
+        <ol>
+          <li>接口方法支持「订单查询」和「退货政策」两个问题。</li>
+          <li>用 <code>@MemoryId</code> 按用户隔离记忆。</li>
+          <li>接一个 <code>OrderTools</code>，能按订单号查状态。</li>
+          <li>把其中一个方法改成流式，观察首字延迟。</li>
+          <li>进阶：给系统提示加 <code>{{current_date}}</code>，让回答能说「今天」。</li>
+        </ol>
+        <div class="callout tip">
+          <span class="ct">判断自己学会了没有</span>
+          <p>
+            如果你能解释「AI Service 和手写 ChatRequest 各自适合什么场景」，
+            并能独立接上记忆与工具，这一章就过关了。
+          </p>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>进入 <a href="05-structured-output.html">05 结构化输出</a>，让接口直接返回对象。</p>
+        <h2 id="next">本章小结与下一章</h2>
+        <p>
+          你现在有了一个「接口即 AI 能力」的工具。下一章
+          <a href="05-structured-output.html">05 结构化输出</a>
+          会让这个接口直接返回对象，而不是一段需要自己解析的文本。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
