@@ -3,6 +3,7 @@
 这是学习站的源码仓库。站点本体在 [`langchain4j-learn/`](langchain4j-learn/)，可以直接当静态网站部署。
 
 - **本地看站**：双击 [`langchain4j-learn/index.html`](langchain4j-learn/index.html)，或在仓库根执行 `python -m http.server 8080` 后访问 <http://localhost:8080/langchain4j-learn/>
+- **配套示例**：[`samples/`](samples/) 是可运行 Maven 工程，`mvn test` 离线通过，设置 `DEEPSEEK_API_KEY` 后 `mvn exec:java` 走真实模型
 - **部署**：见 [DEPLOY.md](DEPLOY.md)（GitHub Pages / Vercel / Netlify / 自建服务器）
 - **更新记录**：见 [CHANGELOG.md](CHANGELOG.md)
 - **自检**：`node tools/check-site.cjs` 与 `node tools/check-sources.cjs --strict`

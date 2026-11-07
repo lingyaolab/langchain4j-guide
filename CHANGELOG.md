@@ -2,6 +2,14 @@
 
 站点版本与所讲解的框架版本分开记：框架版本固定在 **LangChain4j 1.23.0**，站点版本见下。
 
+## v1.10.0 — 2026-11-07
+
+新增可运行的 Java 配套示例。
+
+- `samples/`：LangChain4j 1.23.0 + JDK 17 的 Maven 工程。
+- 包含直接 `ChatModel`、`AiServices`、`@Tool` 工具与离线 `StubChatModel` 测试。
+- `mvn test` 不需要 API Key；`mvn exec:java` 已用 DeepSeek 跑通三个示例。
+
 ## v1.9.0 — 2026-11-07
 
 新增附录 F「动手练习答案」。
