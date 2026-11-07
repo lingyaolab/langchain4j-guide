@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="概念映射、API 对照、0.x 到 1.x 的变化、迁移顺序与选型清单。" />
+    <meta
+      name="description"
+      content="Spring AI 与 LangChain4j 怎么选、怎么迁移：概念对照、API 对照、1.23.0 版本边界与迁移检查清单。"
+    />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
-    <meta property="og:title" content="15 迁移与选型：Spring AI ↔ LangChain4j · LangChain4j 1.23.0 学习站" />
-    <meta property="og:description" content="概念映射、API 对照、0.x 到 1.x 的变化、迁移顺序与选型清单。" />
-    <title>15 迁移与选型：Spring AI ↔ LangChain4j · LangChain4j 1.23.0 学习站</title>
+    <meta property="og:title" content="15 迁移与选型：Spring AI 与 LangChain4j 怎么选 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="概念对照、API 对照与迁移步骤。" />
+    <title>15 迁移与选型：Spring AI 与 LangChain4j 怎么选 · LangChain4j 1.23.0 学习站</title>
     <script>
       try {
         var t = localStorage.getItem("l4j-learn-theme");
@@ -24,14 +27,31 @@
   <body data-page="15-migration" data-root="..">
     <main>
       <article class="article">
-        <h1>15 · 迁移与选型：Spring AI ↔ LangChain4j</h1>
-        <p class="lede">概念映射、API 对照、0.x 到 1.x 的变化、迁移顺序与选型清单。</p>
-        <h2 id="spring-ai">从 Spring AI 映射过来</h2>
-        <p>
-          两者都提供「模型 + 提示词 + 工具 + 记忆 + RAG」，但抽象不同：Spring AI 以
-          <code>ChatClient</code> 与 Advisor 链为中心；LangChain4j 以 <code>ChatModel</code>、
-          AI Service 接口与显式 RAG 组件为中心。
+        <h1>15 · 迁移与选型：Spring AI 与 LangChain4j 怎么选</h1>
+        <p class="lede">
+          学到这里，你可能会问：我已经在用 Spring AI，要不要换 LangChain4j？
+          这一章不做「谁更好」的结论，而是给出边界、概念对照、API 对照和迁移步骤，
+          让你按项目情况做决定。
         </p>
+
+        <h2 id="spring-ai">先理解：Spring AI 与 LangChain4j 的边界</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>维度</th><th>Spring AI</th><th>LangChain4j</th></tr></thead>
+            <tbody>
+              <tr><td>生态</td><td>Spring Boot / Spring 生态</td><td>框架无关，纯 Java 库</td></tr>
+              <tr><td>核心抽象</td><td><code>ChatClient</code> + Advisor 链</td><td><code>ChatModel</code> + AI Service + 显式组件</td></tr>
+              <tr><td>RAG</td><td>Advisor 形式接入</td><td><code>ContentRetriever</code> / <code>RetrievalAugmentor</code></td></tr>
+              <tr><td>适合</td><td>已有 Spring 服务、想快速接入</td><td>想控制调用链、跨框架、细粒度组件组合</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          两者不是互斥的：Spring 项目可以用 LangChain4j，非 Spring 项目也能单独用 Spring AI 的模型模块。
+          选型的核心是「你的项目更依赖哪套抽象」。
+        </p>
+
+        <h2 id="concepts">概念对照：哪些能一一对应</h2>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Spring AI</th><th>LangChain4j</th></tr></thead>
@@ -44,13 +64,10 @@
             </tbody>
           </table>
         </div>
-
-        <h2 id="concepts">概念对照：哪些能一一对应</h2>
-        <ul>
-          <li><strong>能对应</strong>：模型接口、消息类型、工具注解、记忆窗口、向量库、Embedding。</li>
-          <li><strong>不能一一对应</strong>：Advisor 链在 LangChain4j 里没有同名机制，记忆 / RAG / 工具各自是独立组件。</li>
-          <li><strong>默认行为不同</strong>：RAG 的查询改写、阈值、topK 默认值不同，迁移后必须重新评测。</li>
-        </ul>
+        <p>
+          能对应的部分迁移成本低；不能一一对应的是 Advisor 链。LangChain4j 更倾向把记忆、RAG、工具拆成独立组件，
+          不要指望按类名替换就能等价迁移。
+        </p>
 
         <h2 id="api">API 对照：常用调用怎么换</h2>
         <div class="table-wrap">
@@ -66,22 +83,30 @@
             </tbody>
           </table>
         </div>
+        <pre data-lang="java" data-file="LangChain4j 侧">ChatModel model = OpenAiChatModel.builder()
+        .baseUrl("https://api.deepseek.com/v1")
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
+        .build();
+
+String answer = model.chat("你好");</pre>
         <p class="src-line">
-          LangChain4j 入口 <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:194">AiServices.java:194</span>；
-          模型接口 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>。
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/ChatModel.java:34">ChatModel.java:34</span>
+          <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:233">OpenAiChatModel.java:233</span>
         </p>
 
-        <h2 id="versioning">版本：1.23.0 的稳定与 beta</h2>
+        <h2 id="versioning">版本与依赖：1.23.0 怎么选</h2>
         <p>
-          BOM 是 <code>1.23.0</code>；稳定模块跟 BOM，实验模块是 <code>1.23.0-beta33</code>。
+          BOM 版本是 <code>1.23.0</code>；稳定模块跟 BOM，实验模块是 <code>1.23.0-beta33</code>。
           迁移时只写 BOM 版本，不要手写各模块版本。
         </p>
         <p class="src-line">
           <span class="src" data-src="langchain4j-bom/pom.xml:13">pom.xml:13</span>
           <span class="src" data-src="langchain4j-parent/pom.xml:38">pom.xml:38</span>
+          <span class="src" data-src="langchain4j-parent/pom.xml:39">pom.xml:39</span>
         </p>
 
-        <h2 id="migration">迁移步骤：从 0.x 到 1.x</h2>
+        <h2 id="migration">迁移步骤：从 Spring AI 或 0.x 过来</h2>
         <ol class="steps">
           <li><span class="sh">先换依赖</span><div>收口到 <code>langchain4j-bom</code>，移除手写版本。</div></li>
           <li><span class="sh">再换接口</span><div>0.x 的 <code>ChatLanguageModel</code> 统一为 <code>ChatModel</code>。</div></li>
@@ -95,8 +120,8 @@
           <table>
             <thead><tr><th>检查项</th><th>为什么</th></tr></thead>
             <tbody>
-              <tr><td>是否需要声明式接口</td><td>AI Service 能显著减少模板代码</td></tr>
-              <tr><td>是否需要 Advisor 式横切</td><td>LangChain4j 更倾向显式组件组合</td></tr>
+              <tr><td>是否深度依赖 Spring 生态</td><td>依赖越深，留在 Spring AI 越省事</td></tr>
+              <tr><td>是否需要细粒度控制调用链</td><td>LangChain4j 的组件拆分更显式</td></tr>
               <tr><td>RAG 默认值是否一致</td><td>topK / 阈值 / 改写策略不同</td></tr>
               <tr><td>工具与 MCP 治理</td><td>LangChain4j 用 <code>ToolProvider</code> / 白名单</td></tr>
               <tr><td>观测与评测</td><td>监听器、指标、Judge 要提前接</td></tr>
@@ -104,18 +129,50 @@
           </table>
         </div>
 
-        <h2 id="pitfalls">陷阱与窍门</h2>
-        <div class="callout warn">
-          <span class="ct">按类名一一替换</span>
-          <p>Advisor、ChatClient、RAG 的抽象不同；按行为重写，别只做 import 替换。</p>
+        <h2 id="pitfalls">常见错误与排查</h2>
+        <div class="pitfall">
+          <div class="pf-h">1. 按类名一一替换</div>
+          <dl>
+            <dt>你会看到</dt><dd>编译过了，行为却不一样。</dd>
+            <dt>因为</dt><dd>Advisor、ChatClient、RAG 的抽象不同。</dd>
+            <dt>改成</dt><dd>按行为重写，别只做 import 替换。</dd>
+          </dl>
         </div>
-        <div class="callout warn">
-          <span class="ct">迁移后不做回归</span>
-          <p>默认阈值、切分与提示词都会影响结果；没有基线就无法判断是否变差。</p>
+        <div class="pitfall">
+          <div class="pf-h">2. 迁移后不做回归</div>
+          <dl>
+            <dt>你会看到</dt><dd>回答突然变差，但不知道哪儿变了。</dd>
+            <dt>因为</dt><dd>默认阈值、切分与提示词都会影响结果。</dd>
+            <dt>改成</dt><dd>先准备基线，再逐项对比。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">3. 把 beta 版本写进稳定模块</div>
+          <dl>
+            <dt>你会看到</dt><dd>依赖解析失败或运行时链接错误。</dd>
+            <dt>因为</dt><dd>稳定模块与实验模块版本不同。</dd>
+            <dt>改成</dt><dd>只写 BOM 版本，模块不写版本。</dd>
+          </dl>
+        </div>
+        <div class="pitfall">
+          <div class="pf-h">4. 忽略 JDK 要求</div>
+          <dl>
+            <dt>你会看到</dt><dd>编译报 release 17 不支持。</dd>
+            <dt>因为</dt><dd>项目还在 JDK 8/11。</dd>
+            <dt>改成</dt><dd>升级到 JDK 17；LangChain4j 1.23.0 的编译目标就是 17。</dd>
+          </dl>
         </div>
 
-        <h2 id="next">下一步</h2>
-        <p>回到 <a href="00-study-map.html">00 学习地图</a>，按你的项目需要重选主线。</p>
+        <h2 id="next">本章小结与下一步</h2>
+        <p>
+          到这里，整套教程结束。你已经从一次 <code>chat()</code> 走到一个可上线的知识库客服服务，
+          也知道它和 Spring AI 的边界。
+        </p>
+        <p>
+          下一步建议：回到 <a href="00-study-map.html">00 学习地图</a>，
+          挑一条主线做自己的项目；或者从 <a href="14-capstone.html">14 综合案例</a>
+          开始，把示例换成你的业务。
+        </p>
       </article>
     </main>
     <script src="../assets/nav.js"></script>
