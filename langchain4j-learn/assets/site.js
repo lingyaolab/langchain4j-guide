@@ -1064,12 +1064,13 @@
         return;
       }
       var path = m[1];
+      var repoPath = path.replace(/^langchain4j-1\.23\.0\//, "");
       var line = m[2];
       s.setAttribute("title", "点击复制路径" + (line ? "（行 " + line + "）" : "") + "；Ctrl/Cmd + 点击在 GitHub 打开");
       s.textContent = path.split("/").pop() + (line ? ":" + line : "");
       s.addEventListener("click", function (e) {
         if (e.metaKey || e.ctrlKey) {
-          var w = window.open(SITE.repo + "/blob/main/" + path, "_blank");
+          var w = window.open(SITE.repo + "/blob/main/" + repoPath, "_blank");
           if (w) w.opener = null;
           return;
         }
