@@ -2,6 +2,18 @@
 
 站点版本与所讲解的框架版本分开记：框架版本固定在 **LangChain4j 1.23.0**，站点版本见下。
 
+## v0.4.0 — 2026-11-07
+
+新增 11「MCP：客户端、服务端与工具治理」。
+
+### 内容
+
+- 传输：stdio、Streamable HTTP、WebSocket 与 Docker stdio 的适用边界。
+- 客户端：`DefaultMcpClient`、客户端 key、协议版本自动探测与初始化超时。
+- 工具治理：`McpToolProvider` 的白名单、谓词过滤、改名与多 Server 失败策略。
+- 服务端：社区模块 `langchain4j-community-mcp-server`，用 `@Tool` 暴露能力，`-parameters` 与 stderr 日志要求。
+- 安全：工具白名单、header 密钥、工具结果不可信、分级超时。
+
 ## v0.3.0 — 2026-11-07
 
 新增 10「Agent 与工作流」，把单次工具循环扩展到多 Agent 编排。
