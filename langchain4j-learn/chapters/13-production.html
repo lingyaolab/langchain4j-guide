@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="模型超时与重试、并发与限流、降级路由、token 成本、密钥与上线检查清单。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="13 生产化：超时、重试、限流与成本 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="模型超时与重试、并发与限流、降级路由、token 成本、密钥与上线检查清单。" />
+    <title>13 生产化：超时、重试、限流与成本 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="13-production" data-root="..">
+    <main>
+      <article class="article">
+        <h1>13 · 生产化：超时、重试、限流与成本</h1>
+        <p class="lede">模型超时与重试、并发与限流、降级路由、token 成本、密钥与上线检查清单。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>给模型调用设置合理的连接、读取与流式超时</li>
+          <li>区分可重试与不可重试错误，避免无效重试</li>
+          <li>在服务层做限流与降级，而不是把压力全丢给模型</li>
+          <li>算清 token 成本并守住密钥与工具权限</li>
+        </ul>
+
+        <h2 id="why">先说为什么：生产化是在边界上做减法</h2>
+        <p>
+          模型不是数据库：它慢、会限流、输出不确定、按 token 计费。生产化不是加更多功能，
+          而是给每一次调用加上超时、重试、并发、降级与预算边界。
+        </p>
+
+        <h2 id="timeout">超时：连接、读取与流式</h2>
+        <p>
+          <code>OpenAiChatModel.builder().timeout(...)</code> 会同时覆盖连接与读取超时；
+          不设置时连接默认 15 秒、读取默认 60 秒。流式请求可能长时间没有新 token，
+          读取超时要按场景放宽，别用普通问答的 60 秒。
+        </p>
+        <pre data-lang="java" data-file="超时与重试">ChatModel model = OpenAiChatModel.builder()
+        .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+        .modelName("deepseek-chat")
+        .timeout(Duration.ofSeconds(90))
+        .maxRetries(2)
+        .build();</pre>
+        <p class="src-line">
+          连接/读取默认值 <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:79">OpenAiChatModel.java:79</span>
+          <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:80">OpenAiChatModel.java:80</span>；
+          builder <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:543">OpenAiChatModel.java:543</span>。
+        </p>
+
+        <h2 id="retry">重试：哪些错误值得重试</h2>
+        <p>
+          <code>maxRetries</code> 默认是 2，即「首次 + 2 次重试」。429 与 5xx 通常可重试；
+          400、401、403、404 重试没有意义，只会放大延迟与成本。工具调用还要考虑幂等：
+          写操作重试前必须确认业务幂等。
+        </p>
+        <p class="src-line">
+          默认重试次数 <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:88">OpenAiChatModel.java:88</span>；
+          builder <span class="src" data-src="langchain4j-open-ai/src/main/java/dev/langchain4j/model/openai/OpenAiChatModel.java:548">OpenAiChatModel.java:548</span>。
+        </p>
+
+        <h2 id="concurrency">并发与限流：别让一个租户打满</h2>
+        <ul>
+          <li>在服务入口按租户 / 用户做令牌桶限流（Bucket4j、Resilience4j 都可以）。</li>
+          <li>给模型调用与工具调用分别设并发上限，避免工具把线程池占满。</li>
+          <li>流式连接要设置最大生命周期，防止客户端断开后服务端仍长期占用资源。</li>
+          <li>批量任务走队列，不要在 HTTP 请求里同步跑几十个 Agent。</li>
+        </ul>
+
+        <h2 id="fallback">降级：主模型不可用时怎么办</h2>
+        <p>
+          LangChain4j 没有内置的「主备模型路由」，需要在 <code>ChatModel</code> 外面包一层。
+          降级模型要能接受同样的消息与参数，并且保留原请求的 <code>maxOutputTokens</code> 等约束。
+        </p>
+        <pre data-lang="java" data-file="主备模型">final class FallbackChatModel implements ChatModel {
+    private final ChatModel primary;
+    private final ChatModel fallback;
+
+    @Override
+    public ChatResponse doChat(ChatRequest request) {
+        try {
+            return primary.chat(request);
+        } catch (RuntimeException e) {
+            log.warn("primary failed, fallback", e);
+            return fallback.chat(request);
+        }
+    }
+}</pre>
+        <p>
+          生产环境还应加健康检查、熔断与告警；不要在每次失败后都无限降级。
+        </p>
+
+        <h2 id="cost">成本：token、上下文与缓存</h2>
+        <ul>
+          <li>从 <code>ChatResponse.tokenUsage()</code> 取输入/输出 token，按模型单价累计。</li>
+          <li>用 <code>maxOutputTokens</code> 限制回答长度；长回答是成本大头。</li>
+          <li>控制 RAG topK 与上下文长度；召回越多，输入 token 越高。</li>
+          <li>对稳定问题做语义缓存或结果缓存，但注意租户隔离与失效策略。</li>
+        </ul>
+        <p class="src-line">
+          token 用量 <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/model/chat/response/ChatResponse.java:69">ChatResponse.java:69</span>。
+        </p>
+
+        <h2 id="security">密钥、日志与工具权限</h2>
+        <ul>
+          <li>API Key 只从环境变量或密钥管理服务读取，不进代码、不进镜像、不进日志。</li>
+          <li>日志默认不记录完整 prompt / completion；需要时按采样与脱敏开关。</li>
+          <li>工具白名单最小化；MCP 场景用 <code>filterToolNames(...)</code> 收敛工具面。</li>
+          <li>工具结果视为不可信输入，不要直接拼 SQL、Shell 或 HTML。</li>
+        </ul>
+
+        <h2 id="checklist">上线检查清单</h2>
+        <ol class="steps">
+          <li><span class="sh">超时</span><div>连接、读取、流式分别有上限；流式不沿用短读超时。</div></li>
+          <li><span class="sh">重试</span><div>只重试 429/5xx；写工具确认幂等。</div></li>
+          <li><span class="sh">限流</span><div>入口按租户限流；模型与工具并发分开。</div></li>
+          <li><span class="sh">降级</span><div>主备模型、熔断与告警可演练。</div></li>
+          <li><span class="sh">成本</span><div>token 指标、预算告警、上下文与 topK 有上限。</div></li>
+          <li><span class="sh">安全</span><div>密钥、日志脱敏、工具白名单与最小权限。</div></li>
+        </ol>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">把所有错误都重试</span>
+          <p>401/400 重试只会浪费时间；先分类，再决定重试策略。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">只设模型超时，不设工具超时</span>
+          <p>一个卡住的工具同样会拖垮请求；工具执行也要有边界。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">降级模型不兼容参数</span>
+          <p>主模型支持的参数备用模型未必支持；降级前做能力对齐或裁剪参数。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p><strong>14 综合案例</strong> 仍在规划中；把本章的边界接进真实服务。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>
