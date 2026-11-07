@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="把模型、RAG、工具、记忆与流式串成一个可运行服务，含入库、SSE、测试与部署。" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="LangChain4j 1.23.0 学习站" />
+    <meta property="og:title" content="14 综合案例：知识库 + 工具 + 流式 · LangChain4j 1.23.0 学习站" />
+    <meta property="og:description" content="把模型、RAG、工具、记忆与流式串成一个可运行服务，含入库、SSE、测试与部署。" />
+    <title>14 综合案例：知识库 + 工具 + 流式 · LangChain4j 1.23.0 学习站</title>
+    <script>
+      try {
+        var t = localStorage.getItem("l4j-learn-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+    <link rel="stylesheet" href="../assets/base.css" />
+    <link rel="stylesheet" href="../assets/diagrams.css" />
+  </head>
+  <body data-page="14-capstone" data-root="..">
+    <main>
+      <article class="article">
+        <h1>14 · 综合案例：知识库 + 工具 + 流式</h1>
+        <p class="lede">把模型、RAG、工具、记忆与流式串成一个可运行服务，含入库、SSE、测试与部署。</p>
+        <h2 id="goals">读完你能做到</h2>
+        <ul class="goals">
+          <li>把 RAG、工具、记忆与流式接进同一个 AI Service</li>
+          <li>写出可运行的文档入库与检索链路</li>
+          <li>把 <code>TokenStream</code> 转成 SSE</li>
+          <li>给这个服务补测试、超时、限流与部署配置</li>
+        </ul>
+
+        <h2 id="architecture">架构：一条请求怎么走</h2>
+        <p>
+          一条请求依次经过：HTTP 层鉴权 / 限流 → <code>SupportAssistant</code>（AI Service）→
+          记忆注入 → 查询改写 / 检索 → 模型 + 工具循环 → <code>TokenStream</code> → SSE 返回。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>层</th><th>职责</th></tr></thead>
+            <tbody>
+              <tr><td>接口层</td><td>鉴权、限流、请求校验、SSE 生命周期</td></tr>
+              <tr><td>AI Service</td><td>提示词、记忆、RAG、工具编排</td></tr>
+              <tr><td>知识库</td><td>入库、切分、向量化、检索</td></tr>
+              <tr><td>工具</td><td>订单、物流等业务查询</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="deps">依赖与目录结构</h2>
+        <pre data-lang="xml" data-file="pom.xml">&lt;dependency&gt;
+  &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+  &lt;artifactId&gt;langchain4j&lt;/artifactId&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+  &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+  &lt;artifactId&gt;langchain4j-open-ai&lt;/artifactId&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+  &lt;groupId&gt;dev.langchain4j&lt;/groupId&gt;
+  &lt;artifactId&gt;langchain4j-pgvector&lt;/artifactId&gt;
+&lt;/dependency&gt;</pre>
+
+        <h2 id="ingest">入库：加载、切分、向量化</h2>
+        <pre data-lang="java" data-file="IngestService.java">Document document = FileSystemDocumentLoader.loadDocument(
+        Path.of("docs/refund.md"), new TextDocumentParser());
+
+EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
+        .documentSplitter(DocumentSplitters.recursive(500, 50))
+        .embeddingModel(embeddingModel)
+        .embeddingStore(store)
+        .build();
+
+ingestor.ingest(document);</pre>
+        <p>
+          入库是离线任务：文档变更后重建对应片段。不要每次请求都重新解析整份文档。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/data/document/splitter/DocumentSplitters.java:21">DocumentSplitters.java:21</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/store/embedding/EmbeddingStoreIngestor.java:54">EmbeddingStoreIngestor.java:54</span>
+        </p>
+
+        <h2 id="rag">检索：ContentRetriever 与阈值</h2>
+        <pre data-lang="java" data-file="Retriever">ContentRetriever retriever = EmbeddingStoreContentRetriever.builder()
+        .embeddingStore(store)
+        .embeddingModel(embeddingModel)
+        .maxResults(4)
+        .minScore(0.6)
+        .build();</pre>
+        <p>
+          先用较低阈值观察召回，再逐步调高；空召回时宁可回答「资料中没有」，
+          不要让模型自由发挥。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/rag/content/retriever/EmbeddingStoreContentRetriever.java:70">EmbeddingStoreContentRetriever.java:70</span>
+        </p>
+
+        <h2 id="tools">工具：订单查询与用户上下文</h2>
+        <pre data-lang="java" data-file="OrderTools.java">class OrderTools {
+    @Tool("按订单号查询订单状态")
+    OrderView queryOrder(@P("订单号") String orderNo, InvocationContext ctx) {
+        String userId = (String) ctx.invocationParameters().get("userId");
+        return orderService.find(userId, orderNo);
+    }
+}</pre>
+        <p>
+          用户 id 必须来自服务端会话或 <code>InvocationContext</code>，不能由模型填。
+          否则模型可以伪造参数查别人的订单。
+        </p>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/agent/tool/Tool.java:26">Tool.java:26</span>
+          <span class="src" data-src="langchain4j-core/src/main/java/dev/langchain4j/invocation/InvocationContext.java:24">InvocationContext.java:24</span>
+        </p>
+
+        <h2 id="memory">记忆：多轮与多用户</h2>
+        <p>
+          用 <code>@MemoryId</code> 区分用户，<code>chatMemoryProvider</code> 按 id 创建窗口记忆。
+          生产环境要把记忆存储换成 Redis / JDBC，并设置窗口上限。
+        </p>
+        <pre data-lang="java" data-file="Assistant">interface SupportAssistant {
+    @SystemMessage("只根据提供的上下文回答；不知道就说资料中没有")
+    TokenStream chat(@MemoryId String userId, @UserMessage String question);
+}</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/memory/chat/MessageWindowChatMemory.java:269">MessageWindowChatMemory.java:269</span>
+        </p>
+
+        <h2 id="streaming">流式：TokenStream 到 SSE</h2>
+        <pre data-lang="java" data-file="AiService 组装">SupportAssistant assistant = AiServices.builder(SupportAssistant.class)
+        .chatModel(model)
+        .streamingChatModel(streamingModel)
+        .chatMemoryProvider(id -&gt; MessageWindowChatMemory.withMaxMessages(20))
+        .contentRetriever(retriever)
+        .tools(new OrderTools())
+        .build();
+
+TokenStream stream = assistant.chat(userId, question);
+stream.onPartialResponse(token -&gt; emitter.send(SseEmitter.event().data(token)))
+      .onCompleteResponse(r -&gt; emitter.complete())
+      .onError(emitter::completeWithError)
+      .start();</pre>
+        <p class="src-line">
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/AiServices.java:258">AiServices.java:258</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/TokenStream.java:43">TokenStream.java:43</span>
+          <span class="src" data-src="langchain4j/src/main/java/dev/langchain4j/service/TokenStream.java:244">TokenStream.java:244</span>
+        </p>
+
+        <h2 id="api">接口层：鉴权、限流与错误</h2>
+        <ul>
+          <li>鉴权后把 <code>userId</code> 放进会话或 <code>InvocationParameters</code>。</li>
+          <li>按用户/租户限流；流式请求设置最长生命周期。</li>
+          <li>模型错误返回统一错误码；不要把内部堆栈返回给前端。</li>
+          <li>SSE 断开时取消订阅，避免继续消耗模型 token。</li>
+        </ul>
+
+        <h2 id="test">测试：断言、Judge 与回归</h2>
+        <ul>
+          <li>用捕获请求的假模型断言系统提示与工具面。</li>
+          <li>用 <code>Judge</code> 检查回答是否基于召回内容。</li>
+          <li>准备 30–50 条回归样本，覆盖「有答案 / 无答案 / 需要工具」。</li>
+          <li>把超时、降级与限流也做成可测试的配置。</li>
+        </ul>
+
+        <h2 id="deploy">部署与配置</h2>
+        <pre data-lang="yaml" data-file="application.yml">app:
+  model:
+    base-url: https://api.deepseek.com/v1
+    name: deepseek-chat
+  rag:
+    top-k: 4
+    min-score: 0.6
+  limits:
+    max-output-tokens: 800
+    request-timeout: 90s</pre>
+        <p>
+          密钥用环境变量注入；pgvector 连接串、模型地址、限流参数都走配置中心。
+        </p>
+
+        <h2 id="pitfalls">陷阱与窍门</h2>
+        <div class="callout warn">
+          <span class="ct">把入库放在请求里</span>
+          <p>解析 PDF / 调 embedding 很慢；入库必须是离线任务或后台队列。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">工具与 RAG 抢同一个上下文窗口</span>
+          <p>topK 太大 + 工具结果太长会挤爆上下文；分别设上限并监控 token。</p>
+        </div>
+        <div class="callout warn">
+          <span class="ct">流式错误发生在响应头之后</span>
+          <p>已经发 200 就只能通过 SSE 错误事件收尾，不能改状态码。</p>
+        </div>
+
+        <h2 id="next">下一步</h2>
+        <p>进入 <a href="15-migration.html">15 迁移与选型</a>，把这个案例与 Spring AI 版本做对照。</p>
+      </article>
+    </main>
+    <script src="../assets/nav.js"></script>
+    <script src="../assets/mini-highlight.js"></script>
+    <script src="../assets/site.js"></script>
+  </body>
+</html>
