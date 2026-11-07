@@ -2,6 +2,19 @@
 
 站点版本与所讲解的框架版本分开记：框架版本固定在 **LangChain4j 1.23.0**，站点版本见下。
 
+## v0.5.0 — 2026-11-07
+
+新增 12「可观测性、测试与评测」。
+
+### 内容
+
+- `ChatModelListener` 的请求/响应/错误回调，以及 `OpenAiChatModel.listeners(...)` 接入。
+- `MicrometerMetricsChatModelListener`：`gen_ai.client.operation.duration` 与 `gen_ai.client.token.usage`。
+- `ObservationChatModelListener`：把模型调用接进 Micrometer Observation / tracing。
+- 请求断言：`LangChain4jAssertions.assertThat(ChatRequest)` 与捕获请求的假模型。
+- `langchain4j-test` 的 Judge：自然语言 criterion、RAG `basedOnContents(...)`。
+- 回归集与 CI：检索指标与生成指标分开，固定 judge 版本，控制评测成本。
+
 ## v0.4.0 — 2026-11-07
 
 新增 11「MCP：客户端、服务端与工具治理」。
